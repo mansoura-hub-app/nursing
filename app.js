@@ -12,6 +12,13 @@
     chart: S('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
     users: S('<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18 14.8c1.9.6 3 2.2 3 4.7"/>'),
     user: S('<circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/>'),
+    home: S('<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>'),
+    cal: S('<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'),
+    exam: S('<circle cx="12" cy="13" r="8"/><path d="M12 8.5V13l3 2M9.5 2.5h5"/>'),
+    quiz: S('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/>'),
+    cap: S('<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-4.5"/>'),
+    ai: S('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>'),
+    back: S('<path d="M9 5l7 7-7 7"/>'),
   };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const toast = (m) => { const t = document.getElementById("toast"); t.textContent = m; t.className = "show"; setTimeout(() => (t.className = ""), 2200); };
@@ -60,10 +67,18 @@
       },
       async profiles() { return must(await sb.from("profiles").select("*").order("name")); },
       async setRole(id, role) { must(await sb.from("profiles").update({ role }).eq("id", id)); },
+      async list(t, o = {}) {
+        let q = sb.from(t).select(o.sel || "*");
+        if (o.eq) for (const k in o.eq) q = q.eq(k, o.eq[k]);
+        if (o.order) q = q.order(o.order[0], { ascending: o.order[1] !== false });
+        return must(await q.limit(o.limit || 1000));
+      },
+      async insert(t, row) { const d = must(await sb.from(t).insert(row).select()); return Array.isArray(d) && !Array.isArray(row) ? d[0] : d; },
+      async del(t, id) { must(await sb.from(t).delete().eq("id", id)); },
     };
   } else {
     // وضع تجريبي: بيانات على الجهاز بس، لمعاينة الشكل
-    const K = "hub-demo-v1";
+    const K = "hub-demo-v2";
     const iso = (n) => new Date(Date.now() + n * 864e5).toISOString();
     const seed = {
       cur: null,
@@ -83,6 +98,22 @@
         { id: 2, title: "كويز التشريح", details: "المحاضرات من 1 لـ 3", course: "تشريح", due_at: iso(5) },
         { id: 3, title: "سكشن الكيمياء الحيوية", details: "", course: "كيمياء", due_at: iso(-1) },
       ],
+      courses: [
+        { id: 1, name: "تشريح", doctor: "د. محمد", exam_at: iso(12), exam_info: "المحاضرات 1 إلى 6 + السكاشن العملية. ركز على الجهاز العصبي." },
+        { id: 2, name: "فسيولوجي", doctor: "د. هالة", exam_at: iso(20), exam_info: "الفصول 1 إلى 4 من الكتاب المقرر." },
+        { id: 3, name: "كيمياء", doctor: "", exam_at: null, exam_info: "" },
+      ],
+      lectures: [
+        { id: 1, course: "تشريح", doctor: "د. محمد", place: "قاعة 3", dow: 6, start_time: "09:00", end_time: "11:00" },
+        { id: 2, course: "فسيولوجي", doctor: "د. هالة", place: "قاعة 1", dow: 0, start_time: "10:00", end_time: "12:00" },
+        { id: 3, course: "كيمياء", doctor: "", place: "معمل", dow: 2, start_time: "12:00", end_time: "14:00" },
+      ],
+      quizzes: [{ id: 1, title: "كويز تشريح 1", course: "تشريح", created_at: iso(-2) }],
+      questions: [
+        { id: 1, quiz_id: 1, q: "أكبر عضو في الجسم؟", options: ["الجلد", "الكبد", "الرئة"], answer: 0 },
+        { id: 2, quiz_id: 1, q: "عدد عظام الجسم عند البالغ؟", options: ["186", "206", "226"], answer: 1 },
+      ],
+      attempts: [{ id: 1, quiz_id: 1, user_id: "b", score: 2, total: 2, created_at: iso(-1) }, { id: 2, quiz_id: 1, user_id: "c", score: 1, total: 2, created_at: iso(-1) }],
       completions: [
         { task_id: 1, user_id: "b" }, { task_id: 1, user_id: "c" }, { task_id: 2, user_id: "b" }, { task_id: 3, user_id: "c" }, { task_id: 3, user_id: "e" }, { task_id: 3, user_id: "b" },
       ],
@@ -105,12 +136,26 @@
       async setDone(t, u, d) { S.completions = S.completions.filter((c) => !(c.task_id === t && c.user_id === u)); if (d) S.completions.push({ task_id: t, user_id: u }); save(); },
       async profiles() { return S.profiles; },
       async setRole(id, role) { S.profiles.find((p) => p.id === id).role = role; save(); },
+      async list(t, o = {}) {
+        let a = [...(S[t] || [])];
+        if (t === "attempts" && me && me.role === "student") a = a.filter((x) => x.user_id === me.id);
+        if (o.eq) for (const k in o.eq) a = a.filter((x) => String(x[k]) === String(o.eq[k]));
+        if (o.order) { const [k, asc] = o.order; a.sort((x, y) => (x[k] > y[k] ? 1 : x[k] < y[k] ? -1 : 0) * (asc === false ? -1 : 1)); }
+        return a;
+      },
+      async insert(t, row) {
+        S[t] = S[t] || [];
+        const mk = (r) => ({ id: nid(S[t]), created_at: iso(0), ...r });
+        if (Array.isArray(row)) { row.forEach((r) => S[t].push(mk(r))); save(); return row; }
+        const r = mk(row); S[t].push(r); save(); return r;
+      },
+      async del(t, id) { S[t] = S[t].filter((x) => String(x.id) !== String(id)); if (t === "quizzes") S.questions = S.questions.filter((q) => String(q.quiz_id) !== String(id)); save(); },
     };
     window.__demoLogin = async (id) => { S.cur = id; save(); await boot(); };
   }
 
   // ---------- UI ----------
-  let me = null, tab = "tasks", cache = {};
+  let me = null, tab = "home", cache = {};
   const isStaff = () => me && (me.role === "admin" || me.role === "comanager");
   const roleName = { admin: "مدير", comanager: "مساعد المدير", student: "طالب" };
 
@@ -143,26 +188,254 @@
     };
   }
 
+  const act = {}; // data-act handlers
+  const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربع", "الخميس", "الجمعة", "السبت"];
+  const DAY_ORDER = [6, 0, 1, 2, 3, 4, 5];
+  let param = null;
+  const go = (t, p) => { tab = t; param = p == null ? null : p; render(); window.scrollTo(0, 0); };
+  const NAVT = ["home", "tasks", "materials", "dash", "me"];
+  const TITLES = { schedule: "جدول المحاضرات", courses: "المقررات والامتحانات", course: "المقرر", quizzes: "الكويزات", quiz: "كويز", ai: "أدوات الذكاء الاصطناعي", team: "الفريق" };
+
   async function render() {
     if (!me) return renderAuth("in");
     const I = ICONS;
-    const tabs = [["tasks", I.tasks, "المهام"], ["materials", I.book, "المواد"]];
+    const tabs = [["home", I.home, "الرئيسية"], ["tasks", I.tasks, "المهام"], ["materials", I.book, "المواد"]];
     if (isStaff()) tabs.push(["dash", I.chart, "المتابعة"]);
-    if (me.role === "admin") tabs.push(["team", I.users, "الفريق"]);
     tabs.push(["me", I.user, "حسابي"]);
-    if (!tabs.some((t) => t[0] === tab)) tab = "tasks";
-    $app.innerHTML = `<header><h1>${esc(C.APP_NAME)}</h1><span class="badge">${esc(roleName[me.role])}</span></header>
+    const known = ["home", "tasks", "materials", "dash", "me", "schedule", "courses", "course", "quizzes", "quiz", "ai", "team"];
+    if (!known.includes(tab) || (tab === "dash" && !isStaff()) || (tab === "team" && me.role !== "admin")) tab = "home";
+    const sub = !NAVT.includes(tab);
+    const head = tab === "home"
+      ? `<img class="logo" src="${window.APP_LOGO || ""}" alt=""><h1>${esc(C.APP_NAME)}</h1>`
+      : sub ? `<button class="backb" data-go="home" aria-label="رجوع">${I.back}</button><h1>${esc(TITLES[tab] || "")}</h1>`
+      : `<h1>${esc(C.APP_NAME)}</h1>`;
+    $app.innerHTML = `<header>${head}<span class="badge">${esc(roleName[me.role])}</span></header>
       <main id="main"><div class="empty">...</div></main>
-      <nav><div>${tabs.map((t) => `<button data-t="${t[0]}" class="${t[0] === tab ? "on" : ""}"><span class="ic">${t[1]}</span>${t[2]}</button>`).join("")}</div></nav>`;
-    $app.querySelectorAll("nav button").forEach((b) => (b.onclick = () => { tab = b.dataset.t; render(); }));
+      <nav><div>${tabs.map((t) => `<button data-t="${t[0]}" class="${t[0] === tab || (sub && t[0] === "home") ? "on" : ""}"><span class="ic">${t[1]}</span>${t[2]}</button>`).join("")}</div></nav>`;
+    $app.querySelectorAll("nav button").forEach((b) => (b.onclick = () => go(b.dataset.t)));
+    $app.querySelectorAll("header [data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
     try {
-      const v = { tasks: viewTasks, materials: viewMaterials, dash: viewDash, team: viewTeam, me: viewMe }[tab];
+      const v = { home: viewHome, tasks: viewTasks, materials: viewMaterials, dash: viewDash, team: viewTeam, me: viewMe, schedule: viewSchedule, courses: viewCourses, course: viewCourse, quizzes: viewQuizzes, quiz: viewQuiz, ai: viewAI }[tab];
       document.getElementById("main").innerHTML = await v();
       bind();
+      document.querySelectorAll("[data-go2]").forEach((el) => (el.onclick = () => go(el.dataset.go2, el.dataset.p)));
+      tick();
     } catch (e) { document.getElementById("main").innerHTML = `<div class="empty">حصلت مشكلة: ${esc(e.message)}</div>`; }
   }
 
-  const act = {}; // data-act handlers
+  // عدّاد تنازلي حي
+  const cd = (iso) => {
+    const ms = new Date(iso) - Date.now();
+    if (ms <= 0) return "الامتحان بدأ أو خلص";
+    const d = Math.floor(ms / 864e5), h = Math.floor(ms / 36e5) % 24, m = Math.floor(ms / 6e4) % 60;
+    return `${d} يوم ${h} ساعة ${m} دقيقة`;
+  };
+  let tickT;
+  function tick() {
+    clearInterval(tickT);
+    const up = () => document.querySelectorAll("[data-cd]").forEach((el) => (el.textContent = cd(el.dataset.cd)));
+    up(); tickT = setInterval(up, 30000);
+  }
+  const hhmm = (t) => { const [h, m] = String(t).split(":").map(Number); const p = h >= 12 ? "م" : "ص"; return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${p}`; };
+  function nextLecture(ls) {
+    const now = new Date();
+    let best = null;
+    ls.forEach((l) => {
+      const [h, m] = l.start_time.split(":").map(Number);
+      for (let add = 0; add < 8; add++) {
+        const d = new Date(now); d.setDate(now.getDate() + add); d.setHours(h, m, 0, 0);
+        if (d.getDay() === l.dow && d > now) { if (!best || d < best.at) best = { l, at: d }; break; }
+      }
+    });
+    return best;
+  }
+  const untilTxt = (d) => {
+    const mins = Math.round((d - Date.now()) / 6e4);
+    if (mins < 60) return `بعد ${mins} دقيقة`;
+    if (mins < 1440) return `بعد ${Math.floor(mins / 60)} ساعة`;
+    return `بعد ${Math.floor(mins / 1440)} يوم`;
+  };
+
+  async function viewHome() {
+    const [tasks, comps, courses, lects, atts] = await Promise.all([db.tasks(), db.completions(), db.list("courses"), db.list("lectures"), db.list("attempts", { eq: { user_id: me.id } })]);
+    const mine = new Set(comps.filter((c) => c.user_id === me.id).map((c) => c.task_id));
+    const done = tasks.filter((t) => mine.has(t.id)).length;
+    const pct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+    const alerts = [];
+    const now = Date.now();
+    tasks.filter((t) => !mine.has(t.id) && t.due_at).forEach((t) => {
+      const ms = new Date(t.due_at) - now;
+      if (ms < 0) alerts.push(["bad", `فات ميعاد: ${t.title}`, "tasks"]);
+      else if (ms < 2 * 864e5) alerts.push(["warn", `ميعاد قريب: ${t.title} (${fmtDate(t.due_at)})`, "tasks"]);
+    });
+    courses.filter((c) => c.exam_at && new Date(c.exam_at) > now && new Date(c.exam_at) - now < 14 * 864e5).sort((a, b) => new Date(a.exam_at) - new Date(b.exam_at))
+      .forEach((c) => alerts.push(["warn", `امتحان ${c.name} ${untilTxt(new Date(c.exam_at))}`, "courses"]));
+    const nl = nextLecture(lects);
+    const exams = courses.filter((c) => c.exam_at && new Date(c.exam_at) > now).sort((a, b) => new Date(a.exam_at) - new Date(b.exam_at));
+    const ex = exams[0];
+    const ini = (me.name || "?").trim().charAt(0);
+    const boxes = [["tasks", ICONS.tasks, "المهام"], ["materials", ICONS.book, "المواد"], ["schedule", ICONS.cal, "جدول المحاضرات"], ["courses", ICONS.exam, "الامتحانات والمقررات"], ["quizzes", ICONS.quiz, "الكويزات"], ["ai", ICONS.ai, "الذكاء الاصطناعي", "قريبًا"]];
+    if (isStaff()) boxes.push(["dash", ICONS.chart, "المتابعة"]);
+    if (me.role === "admin") boxes.push(["team", ICONS.users, "الفريق"]);
+    return `<div class="card prof"><div class="avatar">${esc(ini)}</div><div style="flex:1;min-width:0"><h3>${esc(me.name)}</h3>
+      <div class="mut">${esc(me.phone || "")} · ${esc(roleName[me.role])}</div>
+      <div class="row mut" style="margin-top:6px"><span>إنجاز المهام</span><b>${done}/${tasks.length}</b></div><div class="bar"><i style="width:${pct}%"></i></div>
+      <div class="mut">كويزات خلصتها: ${new Set(atts.map((a) => a.quiz_id)).size}</div></div></div>
+      ${nl ? `<div class="card next" data-go2="schedule"><span class="ic">${ICONS.cal}</span><div><div class="mut">المحاضرة الجاية</div><b>${esc(nl.l.course)}</b> · ${DAYS[nl.l.dow]} ${hhmm(nl.l.start_time)}${nl.l.place ? " · " + esc(nl.l.place) : ""}<div class="due">${untilTxt(nl.at)}</div></div></div>` : ""}
+      ${ex ? `<div class="card next" data-go2="course" data-p="${ex.id}"><span class="ic">${ICONS.exam}</span><div><div class="mut">أقرب امتحان: ${esc(ex.name)}</div><b data-cd="${ex.exam_at}"></b></div></div>` : ""}
+      ${alerts.length ? `<div class="card"><b>تنبيهات</b>${alerts.slice(0, 5).map((a) => `<div class="alert ${a[0]}" data-go2="${a[2]}">${esc(a[1])}</div>`).join("")}</div>` : ""}
+      <div class="grid">${boxes.map((b) => `<button class="box" data-go2="${b[0]}"><span class="ic">${b[1]}</span><span>${b[2]}</span>${b[3] ? `<small>${b[3]}</small>` : ""}</button>`).join("")}</div>`;
+  }
+
+  async function viewAI() {
+    return `<div class="card" style="text-align:center"><div class="bigic">${ICONS.ai}</div><h3>قريبًا</h3>
+      <div class="mut">تلخيص المحاضرات وعمل أسئلة منها بالذكاء الاصطناعي. بنجهزها وهتظهر هنا أول ما تجهز.</div></div>`;
+  }
+
+  // ---- المقررات والامتحانات ----
+  async function viewCourses() {
+    const cs = await db.list("courses");
+    cs.sort((a, b) => (a.exam_at ? new Date(a.exam_at) : 9e15) - (b.exam_at ? new Date(b.exam_at) : 9e15));
+    let h = "";
+    if (isStaff()) h += `<details class="card"><summary>+ إضافة مقرر</summary><form data-act="addCourse"><input name="name" placeholder="اسم المقرر" required>
+      <input name="doctor" placeholder="الدكتور (اختياري)"><label>ميعاد الامتحان (اختياري)</label><input name="exam" type="datetime-local">
+      <textarea name="info" rows="4" placeholder="المطلوب للامتحان: المحاضرات، الفصول، ملاحظات"></textarea><button class="full">حفظ</button></form></details>`;
+    if (!cs.length) return h + `<div class="empty">مفيش مقررات لسه</div>`;
+    return h + cs.map((c) => `<div class="card clk" data-go2="course" data-p="${c.id}"><div class="row"><div><h3>${esc(c.name)}</h3><div class="mut">${esc(c.doctor || "")}</div></div>
+      ${c.exam_at ? `<div style="text-align:left"><div class="mut">${fmtDate(c.exam_at)}</div><b class="cdv" data-cd="${c.exam_at}"></b></div>` : '<span class="mut">بدون ميعاد</span>'}</div></div>`).join("");
+  }
+  act.addCourse = (f) => run(async () => {
+    const d = new FormData(f), ex = d.get("exam");
+    await db.insert("courses", { name: d.get("name").trim(), doctor: d.get("doctor").trim() || null, exam_at: ex ? new Date(ex).toISOString() : null, exam_info: d.get("info").trim() || null });
+  }, "اتضاف");
+
+  async function viewCourse() {
+    const cs = await db.list("courses", { eq: { id: param } });
+    const c = cs[0];
+    if (!c) return `<div class="empty">المقرر مش موجود</div>`;
+    const [mats, tasks, lects, quizzes] = await Promise.all([db.materials(), db.tasks(), db.list("lectures"), db.list("quizzes")]);
+    const m = mats.filter((x) => x.course === c.name), t = tasks.filter((x) => x.course === c.name), l = lects.filter((x) => x.course === c.name), q = quizzes.filter((x) => x.course === c.name);
+    let h = `<div class="card"><h3>${esc(c.name)}</h3><div class="mut">${esc(c.doctor || "")}</div>
+      ${c.exam_at ? `<div style="margin-top:8px"><div class="mut">الامتحان: ${fmtDate(c.exam_at)}</div><div class="bigcd" data-cd="${c.exam_at}"></div></div>` : ""}</div>`;
+    h += `<div class="card"><b>المطلوب للامتحان</b><div class="info">${c.exam_info ? esc(c.exam_info) : '<span class="mut">لسه ما اتحددش</span>'}</div></div>`;
+    h += `<div class="card"><b>الملفات (${m.length})</b>${m.map((x) => `<div class="row li"><span>${esc(x.title)}</span>${x.url ? `<a class="file" href="${esc(x.url)}" target="_blank" rel="noopener">فتح</a>` : ""}</div>`).join("") || '<div class="mut">مفيش</div>'}</div>`;
+    h += `<div class="card"><b>المحاضرات</b>${l.map((x) => `<div class="li">${DAYS[x.dow]} ${hhmm(x.start_time)}${x.place ? " · " + esc(x.place) : ""}</div>`).join("") || '<div class="mut">مفيش</div>'}</div>`;
+    h += `<div class="card"><b>المهام</b>${t.map((x) => `<div class="li">${esc(x.title)} ${x.due_at ? `<span class="mut">(${fmtDate(x.due_at)})</span>` : ""}</div>`).join("") || '<div class="mut">مفيش</div>'}</div>`;
+    h += `<div class="card"><b>الكويزات</b>${q.map((x) => `<button class="sec full" data-go2="quiz" data-p="${x.id}">${esc(x.title)}</button>`).join("") || '<div class="mut">مفيش</div>'}</div>`;
+    if (isStaff()) h += `<button class="bad" data-act="delCourse" data-id="${c.id}">حذف المقرر</button>`;
+    return h;
+  }
+  act.delCourse = (el, id) => confirm("تحذف المقرر؟") && run(async () => { await db.del("courses", id); go("courses"); });
+
+  // ---- جدول المحاضرات ----
+  async function viewSchedule() {
+    const [ls, cs] = await Promise.all([db.list("lectures"), db.list("courses")]);
+    let h = "";
+    if (isStaff()) h += `<details class="card"><summary>+ إضافة محاضرة</summary><form data-act="addLect">
+      <input name="course" list="cl" placeholder="المادة" required><datalist id="cl">${cs.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist>
+      <select name="dow">${DAY_ORDER.map((d) => `<option value="${d}">${DAYS[d]}</option>`).join("")}</select>
+      <label>من</label><input name="st" type="time" required><label>إلى</label><input name="en" type="time">
+      <input name="place" placeholder="المكان (قاعة / معمل)"><input name="doctor" placeholder="الدكتور"><button class="full">إضافة</button></form></details>`;
+    const nl = nextLecture(ls);
+    if (nl) h += `<div class="card next"><span class="ic">${ICONS.cal}</span><div><div class="mut">المحاضرة الجاية</div><b>${esc(nl.l.course)}</b> · ${untilTxt(nl.at)}</div></div>`;
+    if (ls.length) h += `<button class="sec full" data-act="ics">نزّل تنبيهات المحاضرات والامتحانات في تقويم الموبايل</button><div class="mut" style="margin:6px 2px 12px">بيرن عليك قبل المحاضرة بربع ساعة حتى والتطبيق مقفول.</div>`;
+    const today = new Date().getDay();
+    DAY_ORDER.forEach((d) => {
+      const day = ls.filter((l) => l.dow === d).sort((a, b) => a.start_time.localeCompare(b.start_time));
+      if (!day.length) return;
+      h += `<h3 class="dh ${d === today ? "today" : ""}">${DAYS[d]}${d === today ? " (النهارده)" : ""}</h3>` + day.map((l) => `<div class="card"><div class="row"><div><b>${esc(l.course)}</b>
+        <div class="mut">${hhmm(l.start_time)}${l.end_time ? " - " + hhmm(l.end_time) : ""}${l.place ? " · " + esc(l.place) : ""}${l.doctor ? " · " + esc(l.doctor) : ""}</div></div>
+        ${isStaff() ? `<button class="bad" data-act="delLect" data-id="${l.id}">حذف</button>` : ""}</div></div>`).join("");
+    });
+    if (!ls.length) h += `<div class="empty">مفيش محاضرات لسه</div>`;
+    return h;
+  }
+  act.addLect = (f) => run(async () => {
+    const d = new FormData(f);
+    await db.insert("lectures", { course: d.get("course").trim(), dow: Number(d.get("dow")), start_time: d.get("st"), end_time: d.get("en") || null, place: d.get("place").trim() || null, doctor: d.get("doctor").trim() || null });
+  }, "اتضافت");
+  act.delLect = (el, id) => confirm("تحذف المحاضرة؟") && run(() => db.del("lectures", id));
+  act.ics = async () => {
+    const [ls, cs] = await Promise.all([db.list("lectures"), db.list("courses")]);
+    const p2 = (n) => String(n).padStart(2, "0");
+    const loc = (d) => `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}T${p2(d.getHours())}${p2(d.getMinutes())}00`;
+    const ev = [];
+    ls.forEach((l) => {
+      const [h, m] = l.start_time.split(":").map(Number);
+      const d = new Date(); d.setHours(h, m, 0, 0);
+      while (d.getDay() !== l.dow) d.setDate(d.getDate() + 1);
+      const e = new Date(d); if (l.end_time) { const [eh, em] = l.end_time.split(":").map(Number); e.setHours(eh, em); } else e.setHours(h + 1);
+      ev.push(`BEGIN:VEVENT\r\nUID:lec${l.id}@nursing\r\nDTSTAMP:${loc(new Date())}\r\nDTSTART;TZID=Africa/Cairo:${loc(d)}\r\nDTEND;TZID=Africa/Cairo:${loc(e)}\r\nRRULE:FREQ=WEEKLY\r\nSUMMARY:${l.course}\r\nLOCATION:${l.place || ""}\r\nBEGIN:VALARM\r\nTRIGGER:-PT15M\r\nACTION:DISPLAY\r\nDESCRIPTION:${l.course}\r\nEND:VALARM\r\nEND:VEVENT`);
+    });
+    cs.filter((c) => c.exam_at && new Date(c.exam_at) > new Date()).forEach((c) => {
+      const d = new Date(c.exam_at), e = new Date(d.getTime() + 2 * 36e5);
+      ev.push(`BEGIN:VEVENT\r\nUID:exam${c.id}@nursing\r\nDTSTAMP:${loc(new Date())}\r\nDTSTART;TZID=Africa/Cairo:${loc(d)}\r\nDTEND;TZID=Africa/Cairo:${loc(e)}\r\nSUMMARY:امتحان ${c.name}\r\nBEGIN:VALARM\r\nTRIGGER:-P1D\r\nACTION:DISPLAY\r\nDESCRIPTION:امتحان ${c.name} بكرة\r\nEND:VALARM\r\nEND:VEVENT`);
+    });
+    const txt = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Nursing//AR\r\n${ev.join("\r\n")}\r\nEND:VCALENDAR`.replace(/\\r\\n/g, "\r\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([txt], { type: "text/calendar;charset=utf-8" }));
+    a.download = "nursing.ics"; document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  // ---- الكويزات ----
+  async function viewQuizzes() {
+    const [qs, atts, cs] = await Promise.all([db.list("quizzes", { order: ["created_at", false] }), db.list("attempts", { eq: { user_id: me.id } }), db.list("courses")]);
+    let h = "";
+    if (isStaff()) h += `<details class="card"><summary>+ كويز جديد</summary><form data-act="addQuiz">
+      <input name="title" placeholder="اسم الكويز" required><input name="course" list="cl2" placeholder="المادة"><datalist id="cl2">${cs.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist>
+      <label>الأسئلة: سطر للسؤال، وكل سطر بعده اختيار، حط * قبل الإجابة الصح. سيب سطر فاضي بين كل سؤال.</label>
+      <textarea name="body" rows="9" placeholder="أكبر عضو في الجسم؟&#10;*الجلد&#10;الكبد&#10;الرئة&#10;&#10;سؤال تاني؟&#10;اختيار&#10;*الصح"></textarea><button class="full">نشر</button></form></details>`;
+    if (!qs.length) return h + `<div class="empty">مفيش كويزات لسه</div>`;
+    return h + qs.map((q) => {
+      const my = atts.filter((a) => String(a.quiz_id) === String(q.id));
+      const best = my.length ? Math.max(...my.map((a) => Math.round((a.score / a.total) * 100))) : null;
+      return `<div class="card clk" data-go2="quiz" data-p="${q.id}"><div class="row"><div><h3>${esc(q.title)}</h3><div class="mut">${esc(q.course || "")}</div></div>
+        ${best != null ? `<span class="pill y">أحسن نتيجة ${best}%</span>` : '<span class="pill n">لسه</span>'}</div></div>`;
+    }).join("");
+  }
+  act.addQuiz = (f) => run(async () => {
+    const d = new FormData(f);
+    const blocks = String(d.get("body")).split(/\n\s*\n/).map((b) => b.split("\n").map((x) => x.trim()).filter(Boolean)).filter((b) => b.length);
+    if (!blocks.length) throw new Error("اكتب الأسئلة");
+    const qs = blocks.map((b, i) => {
+      const opts = b.slice(1);
+      const ans = opts.findIndex((o) => o.startsWith("*"));
+      if (opts.length < 2 || ans < 0 || opts.filter((o) => o.startsWith("*")).length !== 1) throw new Error("السؤال " + (i + 1) + ": لازم اختيارين على الأقل وإجابة واحدة عليها *");
+      return { q: b[0], options: opts.map((o) => o.replace(/^\*\s*/, "")), answer: ans };
+    });
+    const quiz = await db.insert("quizzes", { title: d.get("title").trim(), course: d.get("course").trim() || null, created_by: me.id });
+    await db.insert("questions", qs.map((q) => ({ ...q, quiz_id: quiz.id })));
+  }, "اتنشر");
+
+  let lastRes = null;
+  async function viewQuiz() {
+    const quiz = (await db.list("quizzes", { eq: { id: param } }))[0];
+    if (!quiz) return `<div class="empty">الكويز مش موجود</div>`;
+    const qs = (await db.list("questions", { eq: { quiz_id: param }, order: ["id"] }));
+    if (lastRes && String(lastRes.quiz) === String(param)) {
+      const r = lastRes;
+      return `<div class="card" style="text-align:center"><h3>${esc(quiz.title)}</h3><div class="bigcd">${r.score} / ${qs.length}</div><div class="mut">${Math.round((r.score / qs.length) * 100)}%</div></div>` +
+        qs.map((q, i) => `<div class="card"><b>${i + 1}. ${esc(q.q)}</b>${q.options.map((o, j) => `<div class="opt ${j === q.answer ? "right" : r.picks[i] === j ? "wrong" : ""}">${esc(o)}${j === q.answer ? " ✓" : r.picks[i] === j ? " ✗" : ""}</div>`).join("")}</div>`).join("") +
+        `<button class="full" data-act="again">حاول تاني</button>` +
+        (isStaff() ? "" : "");
+    }
+    let h = `<div class="card"><h3>${esc(quiz.title)}</h3><div class="mut">${esc(quiz.course || "")} · ${qs.length} سؤال</div></div>`;
+    if (!qs.length) return h + `<div class="empty">مفيش أسئلة</div>`;
+    h += `<form data-act="submitQuiz" data-id="${quiz.id}">` + qs.map((q, i) => `<div class="card"><b>${i + 1}. ${esc(q.q)}</b>${q.options.map((o, j) => `<label class="opt"><input type="radio" name="q${i}" value="${j}" required> ${esc(o)}</label>`).join("")}</div>`).join("") + `<button class="full">تسليم</button></form>`;
+    if (isStaff()) h += `<button class="bad" data-act="delQuiz" data-id="${quiz.id}">حذف الكويز</button>`;
+    return h;
+  }
+  act.submitQuiz = (f, id) => run(async () => {
+    const qs = await db.list("questions", { eq: { quiz_id: id }, order: ["id"] });
+    const d = new FormData(f);
+    const picks = qs.map((q, i) => Number(d.get("q" + i)));
+    const score = qs.filter((q, i) => q.answer === picks[i]).length;
+    await db.insert("attempts", { quiz_id: Number(id), user_id: me.id, score, total: qs.length });
+    lastRes = { quiz: id, score, picks };
+  });
+  act.again = () => { lastRes = null; render(); };
+  act.delQuiz = (el, id) => confirm("تحذف الكويز؟") && run(async () => { await db.del("quizzes", id); go("quizzes"); });
+
   function bind() {
     document.querySelectorAll("[data-act]").forEach((el) => {
       const h = act[el.dataset.act];
@@ -233,8 +506,11 @@
   async function viewDash() {
     const [tasks, comps, profs] = await Promise.all([db.tasks(), db.completions(), db.profiles()]);
     const students = profs.filter((p) => p.role === "student");
-    if (!tasks.length) return `<div class="empty">ضيف مهام الأول</div>`;
+    const [qz, at] = await Promise.all([db.list("quizzes"), db.list("attempts")]);
     let h = `<div class="card mut">عدد الطلبة: ${students.length}</div>`;
+    if (qz.length) h += qz.map((q) => { const a = at.filter((x) => String(x.quiz_id) === String(q.id)); const avg = a.length ? Math.round(a.reduce((s2, x) => s2 + (x.score / x.total) * 100, 0) / a.length) : 0;
+      return `<div class="card"><div class="row"><h3>${esc(q.title)}</h3><b>${avg}%</b></div><details><summary>النتائج (${a.length})</summary>${a.map((x) => `<span class="pill y">${esc((profs.find((p) => p.id === x.user_id) || {}).name || "؟")}: ${x.score}/${x.total}</span>`).join("")}</details></div>`; }).join("");
+    if (!tasks.length) return h + `<div class="empty">ضيف مهام الأول</div>`;
     h += tasks.map((t) => {
       const doneIds = new Set(comps.filter((c) => c.task_id === t.id).map((c) => c.user_id));
       const y = students.filter((s) => doneIds.has(s.id)), n = students.filter((s) => !doneIds.has(s.id));
@@ -263,5 +539,5 @@
   act.demo = (el, id) => window.__demoLogin(id);
 
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
-  if (DEMO) { const q = new URLSearchParams(location.search); if (q.get("as")) { tab = q.get("tab") || "tasks"; window.__demoLogin(q.get("as")); } else boot(); } else boot();
+  if (DEMO) { const q = new URLSearchParams(location.search); if (q.get("as")) { tab = q.get("tab") || "home"; param = q.get("p"); window.__demoLogin(q.get("as")); } else boot(); } else boot();
 })();
