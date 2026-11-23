@@ -1,8 +1,18 @@
 (function () {
   const C = window.APP_CONFIG;
-  const DEMO = !C.SUPABASE_URL || !C.SUPABASE_ANON_KEY;
+  const DEMO = !C.SUPABASE_URL || !C.SUPABASE_ANON_KEY || new URLSearchParams(location.search).has("demo");
   const $app = document.getElementById("app");
   document.title = C.APP_NAME;
+  const THEME = new URLSearchParams(location.search).get("theme") || C.THEME || "clinic";
+  document.documentElement.dataset.theme = THEME;
+  const S = (d) => `<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  const ICONS = {
+    tasks: S('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/>'),
+    book: S('<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 19V5.5"/>'),
+    chart: S('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+    users: S('<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18 14.8c1.9.6 3 2.2 3 4.7"/>'),
+    user: S('<circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/>'),
+  };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const toast = (m) => { const t = document.getElementById("toast"); t.textContent = m; t.className = "show"; setTimeout(() => (t.className = ""), 2200); };
   const emailOf = (phone) => phone.replace(/\D/g, "") + "@hub-students.app";
@@ -135,14 +145,15 @@
 
   async function render() {
     if (!me) return renderAuth("in");
-    const tabs = [["tasks", "✅", "المهام"], ["materials", "📚", "المواد"]];
-    if (isStaff()) tabs.push(["dash", "📊", "المتابعة"]);
-    if (me.role === "admin") tabs.push(["team", "👥", "الفريق"]);
-    tabs.push(["me", "👤", "حسابي"]);
+    const I = ICONS;
+    const tabs = [["tasks", I.tasks, "المهام"], ["materials", I.book, "المواد"]];
+    if (isStaff()) tabs.push(["dash", I.chart, "المتابعة"]);
+    if (me.role === "admin") tabs.push(["team", I.users, "الفريق"]);
+    tabs.push(["me", I.user, "حسابي"]);
     if (!tabs.some((t) => t[0] === tab)) tab = "tasks";
     $app.innerHTML = `<header><h1>${esc(C.APP_NAME)}</h1><span class="badge">${esc(roleName[me.role])}</span></header>
       <main id="main"><div class="empty">...</div></main>
-      <nav><div>${tabs.map((t) => `<button data-t="${t[0]}" class="${t[0] === tab ? "on" : ""}"><span>${t[1]}</span>${t[2]}</button>`).join("")}</div></nav>`;
+      <nav><div>${tabs.map((t) => `<button data-t="${t[0]}" class="${t[0] === tab ? "on" : ""}"><span class="ic">${t[1]}</span>${t[2]}</button>`).join("")}</div></nav>`;
     $app.querySelectorAll("nav button").forEach((b) => (b.onclick = () => { tab = b.dataset.t; render(); }));
     try {
       const v = { tasks: viewTasks, materials: viewMaterials, dash: viewDash, team: viewTeam, me: viewMe }[tab];
@@ -169,7 +180,7 @@
     const done = tasks.filter((t) => mine.has(t.id)).length;
     const pct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
     let h = `<div class="card"><div class="row"><b>إنجازك</b><span>${done} من ${tasks.length}</span></div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
-    if (isStaff()) h += `<details class="card"><summary>➕ إضافة مهمة أو ميعاد</summary>
+    if (isStaff()) h += `<details class="card"><summary>+ إضافة مهمة أو ميعاد</summary>
       <form data-act="addTask"><input name="title" placeholder="عنوان المهمة" required>
       <input name="course" placeholder="المادة"><textarea name="details" rows="2" placeholder="تفاصيل (اختياري)"></textarea>
       <label>آخر ميعاد</label><input name="due" type="date"><button class="full">نشر للطلبة</button></form></details>`;
@@ -194,7 +205,7 @@
   async function viewMaterials() {
     const list = await db.materials();
     let h = "";
-    if (isStaff()) h += `<details class="card"><summary>➕ رفع ملف أو لينك</summary>
+    if (isStaff()) h += `<details class="card"><summary>+ رفع ملف أو لينك</summary>
       <form data-act="addMat"><input name="title" placeholder="اسم الملف (مثلا: محاضرة 3)" required><input name="course" placeholder="المادة">
       <label>اختار ملف (PDF أو صورة، لحد 50 ميجا)</label><input name="file" type="file">
       <label>أو حط لينك بدل الملف</label><input name="url" type="url" placeholder="https://">
@@ -230,7 +241,7 @@
       const pct = students.length ? Math.round((y.length / students.length) * 100) : 0;
       return `<div class="card"><div class="row"><h3>${esc(t.title)}</h3><b>${pct}%</b></div><div class="bar"><i style="width:${pct}%"></i></div>
         <details><summary>خلّصوا (${y.length})</summary>${y.map((s) => `<span class="pill y">${esc(s.name)}</span>`).join("") || '<div class="mut">لا أحد</div>'}</details>
-        <details open><summary>لسه (${n.length})</summary>${n.map((s) => `<span class="pill n">${esc(s.name)}</span>`).join("") || '<div class="mut">الكل خلّص 🎉</div>'}</details></div>`;
+        <details open><summary>لسه (${n.length})</summary>${n.map((s) => `<span class="pill n">${esc(s.name)}</span>`).join("") || '<div class="mut">الكل خلّص</div>'}</details></div>`;
     }).join("");
     return h;
   }
