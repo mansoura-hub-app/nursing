@@ -4,14 +4,18 @@ alter table public.profiles add column if not exists grp text;
 alter table public.courses add column if not exists year text;
 alter table public.questions add column if not exists explain text;
 
-create or replace function public.my_role() returns text
-language sql stable security definer set search_path = public as $$
-  select role from public.profiles where id = auth.uid();
-$$;
-grant execute on function public.my_role() to authenticated;
--- الطالب يغيّر فرقته ومجموعته بس، مش دوره
+-- الطالب يغيّر فرقته ومجموعته بس. تغيير الدور للمدير بس (trigger، لأن سياسة with check لوحدها ماكفتش)
 create policy "profiles update own cohort" on public.profiles for update to authenticated
-  using (id = auth.uid()) with check (id = auth.uid() and role = public.my_role());
+  using (id = auth.uid()) with check (id = auth.uid());
+create or replace function public.guard_role() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.role is distinct from old.role and auth.uid() is not null and not public.is_admin() then
+    raise exception 'role change not allowed';
+  end if;
+  if new.id is distinct from old.id then raise exception 'id change not allowed'; end if;
+  return new;
+end $$;
+create trigger guard_role_trg before update on public.profiles for each row execute function public.guard_role();
 
 create table public.announcements (
   id bigint generated always as identity primary key,
