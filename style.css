@@ -46,3 +46,26 @@ a.file{color:var(--ac);text-decoration:none;font-weight:700}
 #toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 18px;border-radius:10px;opacity:0;transition:.3s;pointer-events:none;z-index:9}
 #toast.show{opacity:1}
 details summary{cursor:pointer;color:var(--ac);font-size:14.5px;margin-top:6px;font-weight:700}
+
+header .logo{width:40px;height:40px;border-radius:50%;background:#fff;margin-inline-end:10px;flex:none}
+header{gap:8px}header h1{flex:1}
+.backb{background:rgba(255,255,255,.2);color:inherit;padding:4px 6px;border-radius:50%;display:flex}
+.prof{display:flex;gap:14px;align-items:center}
+.avatar{width:56px;height:56px;border-radius:50%;background:var(--ac);color:var(--actx);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;flex:none}
+.next{display:flex;gap:12px;align-items:center;cursor:pointer}.next .ic{color:var(--ac);display:flex}
+.alert{padding:8px 10px;margin-top:6px;border-radius:10px;font-size:14px;cursor:pointer}
+.alert.warn{background:#fef3c7;color:#92400e}.alert.bad{background:var(--badbg);color:var(--badfg)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px}
+.box{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:104px;background:var(--card);color:var(--tx);border-radius:var(--r);box-shadow:var(--sh);padding:14px 8px;position:relative;font-size:15px}
+.box .ic{color:var(--ac);display:flex}.box .ic svg{width:32px;height:32px}
+.box small{position:absolute;top:8px;left:8px;background:var(--card2);color:var(--ac);border-radius:99px;padding:1px 8px;font-size:11px}
+.clk{cursor:pointer}
+.cdv{color:var(--ac);font-size:13px}
+.bigcd{font-size:22px;font-weight:700;color:var(--ac)}
+.bigic{color:var(--ac);display:flex;justify-content:center}.bigic svg{width:48px;height:48px}
+.info{white-space:pre-wrap;margin-top:6px}
+.li{padding:6px 0;border-top:1px solid var(--line)}
+.dh{margin:16px 2px 8px}.dh.today{color:var(--ac)}
+.opt{display:block;padding:10px 12px;margin-top:8px;border:1px solid var(--line);border-radius:10px}
+.opt input{width:auto;margin:0 0 0 8px}
+.opt.right{background:var(--okbg);color:var(--okfg);border-color:transparent}.opt.wrong{background:var(--badbg);color:var(--badfg);border-color:transparent}
