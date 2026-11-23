@@ -20,6 +20,8 @@
     ai: S('<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>'),
     bell: S('<path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15z"/><path d="M10 21a2 2 0 0 0 4 0"/>'),
     star: S('<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>'),
+    cards: S('<rect x="3" y="6" width="14" height="13" rx="2"/><path d="M7 3h12a2 2 0 0 1 2 2v11"/>'),
+    timer: S('<circle cx="12" cy="13" r="8"/><path d="M12 9v4M9 2h6M19 5l1.5-1.5"/>'),
     back: S('<path d="M9 5l7 7-7 7"/>'),
   };
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -93,7 +95,7 @@
     const so = db.signOut; db.signOut = async () => { Object.keys(localStorage).filter((k) => k.startsWith("nc:") || k.startsWith("fav") || k.startsWith("recent")).forEach((k) => localStorage.removeItem(k)); return so(); };
   } else {
     // وضع تجريبي: بيانات على الجهاز بس، لمعاينة الشكل
-    const K = "hub-demo-v3";
+    const K = "hub-demo-v4";
     const iso = (n) => new Date(Date.now() + n * 864e5).toISOString();
     const seed = {
       cur: null,
@@ -132,6 +134,10 @@
       topics: [{ id: 1, course: "تشريح", title: "الجهاز العصبي", ord: 1 }, { id: 2, course: "تشريح", title: "الجهاز العضلي", ord: 2 }, { id: 3, course: "تشريح", title: "الهيكل العظمي", ord: 3 }],
       topic_done: [{ topic_id: 1, user_id: "b" }],
       wrong_questions: [{ user_id: "b", question_id: 2 }],
+      decks: [{ id: 1, title: "مصطلحات التشريح", course: "تشريح" }],
+      cards: [{ id: 1, deck_id: 1, front: "Anterior", back: "أمامي" }, { id: 2, deck_id: 1, front: "Posterior", back: "خلفي" }, { id: 3, deck_id: 1, front: "Proximal", back: "قريب من الجذع" }],
+      card_progress: [{ user_id: "b", card_id: 1, box: 3, due_at: iso(5) }],
+      mock_results: [{ id: 1, user_id: "b", course: "تشريح", score: 7, total: 10, secs: 420, created_at: iso(-1) }],
       attempts: [{ id: 1, quiz_id: 1, user_id: "b", score: 2, total: 2, created_at: iso(-1) }, { id: 2, quiz_id: 1, user_id: "c", score: 1, total: 2, created_at: iso(-1) }],
       completions: [
         { task_id: 1, user_id: "b" }, { task_id: 1, user_id: "c" }, { task_id: 2, user_id: "b" }, { task_id: 3, user_id: "c" }, { task_id: 3, user_id: "e" }, { task_id: 3, user_id: "b" },
@@ -157,7 +163,7 @@
       async setRole(id, role) { S.profiles.find((p) => p.id === id).role = role; save(); },
       async list(t, o = {}) {
         let a = [...(S[t] || [])];
-        if (["attempts", "topic_done", "wrong_questions"].includes(t) && me && me.role === "student") a = a.filter((x) => x.user_id === me.id);
+        if (["attempts", "topic_done", "wrong_questions", "card_progress", "mock_results"].includes(t) && me && me.role === "student") a = a.filter((x) => x.user_id === me.id);
         if (o.eq) for (const k in o.eq) a = a.filter((x) => String(x[k]) === String(o.eq[k]));
         if (o.order) { const [k, asc] = o.order; a.sort((x, y) => (x[k] > y[k] ? 1 : x[k] < y[k] ? -1 : 0) * (asc === false ? -1 : 1)); }
         return a;
@@ -168,7 +174,7 @@
         if (Array.isArray(row)) { row.forEach((r) => S[t].push(mk(r))); save(); return row; }
         const r = mk(row); S[t].push(r); save(); return r;
       },
-      async upsert(t, rows) { S[t] = S[t] || []; rows.forEach((r) => { if (!S[t].some((x) => x.user_id === r.user_id && x.question_id === r.question_id)) S[t].push(r); }); save(); },
+      async upsert(t, rows) { S[t] = S[t] || []; const kk = t === "card_progress" ? "card_id" : "question_id"; rows.forEach((r) => { const i = S[t].findIndex((x) => x.user_id === r.user_id && x[kk] === r[kk]); if (i >= 0) S[t][i] = r; else S[t].push(r); }); save(); },
       async delWhere(t, eq, col, ids) { S[t] = (S[t] || []).filter((x) => !(Object.keys(eq).every((k) => String(x[k]) === String(eq[k])) && (!col || ids.map(String).includes(String(x[col]))))); save(); },
       async setProfile(id, patch) { Object.assign(S.profiles.find((p) => p.id === id), patch); save(); },
       async del(t, id) { S[t] = S[t].filter((x) => String(x.id) !== String(id)); if (t === "quizzes") S.questions = S.questions.filter((q) => String(q.quiz_id) !== String(id)); save(); },
@@ -220,7 +226,7 @@
   const lsj = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } };
   const go = (t, p) => { tab = t; param = p == null ? null : p; render(); window.scrollTo(0, 0); };
   const NAVT = ["home", "tasks", "materials", "dash", "me"];
-  const TITLES = { ann: "الإعلانات", mistakes: "بنك الأخطاء", schedule: "جدول المحاضرات", courses: "المقررات والامتحانات", course: "المقرر", quizzes: "الكويزات", quiz: "كويز", ai: "أدوات الذكاء الاصطناعي", team: "الفريق" };
+  const TITLES = { decks: "كروت الحفظ", deck: "مراجعة", mock: "امتحان تجريبي", focus: "مؤقت التركيز", progress: "تقدمي", ann: "الإعلانات", mistakes: "بنك الأخطاء", schedule: "جدول المحاضرات", courses: "المقررات والامتحانات", course: "المقرر", quizzes: "الكويزات", quiz: "كويز", ai: "أدوات الذكاء الاصطناعي", team: "الفريق" };
 
   async function render() {
     if (!me) return renderAuth("in");
@@ -228,7 +234,7 @@
     const tabs = [["home", I.home, "الرئيسية"], ["tasks", I.tasks, "المهام"], ["materials", I.book, "المواد"]];
     if (isStaff()) tabs.push(["dash", I.chart, "المتابعة"]);
     tabs.push(["me", I.user, "حسابي"]);
-    const known = ["mistakes", "ann", "home", "tasks", "materials", "dash", "me", "schedule", "courses", "course", "quizzes", "quiz", "ai", "team"];
+    const known = ["decks", "deck", "mock", "focus", "progress", "mistakes", "ann", "home", "tasks", "materials", "dash", "me", "schedule", "courses", "course", "quizzes", "quiz", "ai", "team"];
     if (!known.includes(tab) || (tab === "dash" && !isStaff()) || (tab === "team" && me.role !== "admin")) tab = "home";
     const sub = !NAVT.includes(tab);
     const head = tab === "home"
@@ -242,7 +248,7 @@
     $app.querySelectorAll("header [data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
     try {
       try { COURSES = await db.list("courses"); } catch (e) { COURSES = []; }
-      const v = { ann: viewAnn, home: viewHome, tasks: viewTasks, materials: viewMaterials, dash: viewDash, team: viewTeam, me: viewMe, schedule: viewSchedule, courses: viewCourses, course: viewCourse, quizzes: viewQuizzes, quiz: viewQuiz, mistakes: () => { param = "mistakes"; return viewQuiz(); }, ai: viewAI }[tab];
+      const v = { decks: viewDecks, deck: viewDeck, mock: viewMock, focus: viewFocus, progress: viewProgress, ann: viewAnn, home: viewHome, tasks: viewTasks, materials: viewMaterials, dash: viewDash, team: viewTeam, me: viewMe, schedule: viewSchedule, courses: viewCourses, course: viewCourse, quizzes: viewQuizzes, quiz: viewQuiz, mistakes: () => { param = "mistakes"; return viewQuiz(); }, ai: viewAI }[tab];
       document.getElementById("main").innerHTML = await v();
       bind();
       if (tab === "materials") bindMaterials();
@@ -304,7 +310,7 @@
     const exams = courses.filter((c) => c.exam_at && new Date(c.exam_at) > now).sort((a, b) => new Date(a.exam_at) - new Date(b.exam_at));
     const ex = exams[0];
     const ini = (me.name || "?").trim().charAt(0);
-    const boxes = [["ann", ICONS.bell, "الإعلانات"], ["tasks", ICONS.tasks, "المهام"], ["materials", ICONS.book, "المواد"], ["schedule", ICONS.cal, "جدول المحاضرات"], ["courses", ICONS.exam, "الامتحانات والمقررات"], ["quizzes", ICONS.quiz, "الكويزات"], ["mistakes", ICONS.cap, "بنك الأخطاء"], ["ai", ICONS.ai, "الذكاء الاصطناعي", "قريبًا"]];
+    const boxes = [["ann", ICONS.bell, "الإعلانات"], ["tasks", ICONS.tasks, "المهام"], ["materials", ICONS.book, "المواد"], ["schedule", ICONS.cal, "جدول المحاضرات"], ["courses", ICONS.exam, "الامتحانات والمقررات"], ["quizzes", ICONS.quiz, "الكويزات"], ["mistakes", ICONS.cap, "بنك الأخطاء"], ["decks", ICONS.cards, "كروت الحفظ"], ["mock", ICONS.exam, "امتحان تجريبي"], ["focus", ICONS.timer, "مؤقت التركيز"], ["progress", ICONS.chart, "تقدمي"], ["ai", ICONS.ai, "الذكاء الاصطناعي", "قريبًا"]];
     if (isStaff()) boxes.push(["dash", ICONS.chart, "المتابعة"]);
     if (me.role === "admin") boxes.push(["team", ICONS.users, "الفريق"]);
     return `<div class="card prof"><div class="avatar">${esc(ini)}</div><div style="flex:1;min-width:0"><h3>${esc(me.name)}</h3>
@@ -333,6 +339,151 @@
   }
   act.addAnn = (f) => run(async () => { const d = new FormData(f); await db.insert("announcements", { title: d.get("title").trim(), body: d.get("body").trim() || null, pinned: !!d.get("pin"), created_by: me.id }); }, "اتنشر");
   act.delAnn = (el, id) => confirm("تحذف الإعلان؟") && run(() => db.del("announcements", id));
+
+
+  // ---- كروت الحفظ (تكرار متباعد بسيط) ----
+  const BOX_DAYS = [0, 1, 3, 7, 14, 30];
+  let rv = null;
+  async function viewDecks() {
+    const [decks, cards, prog] = await Promise.all([db.list("decks"), db.list("cards", { sel: "id,deck_id" }), db.list("card_progress", { eq: { user_id: me.id } })]);
+    const pm = {}; prog.forEach((p) => (pm[p.card_id] = p));
+    const now = Date.now();
+    let h = "";
+    if (isStaff()) h += `<details class="card"><summary>+ مجموعة كروت جديدة</summary><form data-act="addDeck"><input name="title" placeholder="اسم المجموعة (مثلا: مصطلحات)" required>
+      <input name="course" list="dcl" placeholder="المادة"><datalist id="dcl">${COURSES.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist>
+      <textarea name="body" rows="7" placeholder="كارت في كل سطر: السؤال | الإجابة&#10;Anterior | أمامي&#10;Posterior | خلفي"></textarea><button class="full">حفظ</button></form></details>`;
+    const vd = decks.filter((d) => vis(d.course));
+    if (!vd.length) return h + `<div class="empty">مفيش كروت لسه</div>`;
+    return h + vd.map((d) => {
+      const cs = cards.filter((c) => String(c.deck_id) === String(d.id));
+      const due = cs.filter((c) => !pm[c.id] || new Date(pm[c.id].due_at) <= now).length;
+      const known = cs.filter((c) => pm[c.id] && pm[c.id].box >= 3).length;
+      return `<div class="card clk" data-go2="deck" data-p="${d.id}"><div class="row"><div><h3>${esc(d.title)}</h3><div class="mut">${esc(d.course || "")} · ${cs.length} كارت · حفظت ${known}</div></div>
+        <span class="pill ${due ? "n" : "y"}">${due ? "للمراجعة " + due : "خلصت ✓"}</span></div></div>`;
+    }).join("");
+  }
+  act.addDeck = (f) => run(async () => {
+    const d = new FormData(f);
+    const rows = String(d.get("body")).split("\n").map((l) => l.split("|").map((x) => x.trim())).filter((a) => a.length >= 2 && a[0] && a[1]);
+    if (!rows.length) throw new Error("اكتب كارت في كل سطر: السؤال | الإجابة");
+    const deck = await db.insert("decks", { title: d.get("title").trim(), course: d.get("course").trim() || null, created_by: me.id });
+    await db.insert("cards", rows.map((a) => ({ deck_id: deck.id, front: a[0], back: a.slice(1).join(" | ") })));
+  }, "اتحفظت");
+  async function viewDeck() {
+    if (!rv || String(rv.id) !== String(param)) {
+      const [cards, prog] = await Promise.all([db.list("cards", { eq: { deck_id: param } }), db.list("card_progress", { eq: { user_id: me.id } })]);
+      const pm = {}; prog.forEach((p) => (pm[p.card_id] = p));
+      const q = cards.filter((c) => !pm[c.id] || new Date(pm[c.id].due_at) <= Date.now()).map((c) => ({ ...c, box: pm[c.id] ? pm[c.id].box : 0 }));
+      rv = { id: param, q, i: 0, shown: false, knew: 0, total: q.length };
+    }
+    if (!rv.q.length || rv.i >= rv.q.length) {
+      const t = rv.total, k = rv.knew; rv = null;
+      return `<div class="card" style="text-align:center"><div class="bigic">${ICONS.cap}</div><h3>${t ? "خلصت المراجعة" : "مفيش كروت للمراجعة دلوقتي"}</h3>${t ? `<div class="mut">عرفت ${k} من ${t}</div>` : '<div class="mut">ارجع بعدين، الكروت بتظهر تاني في ميعادها.</div>'}</div><button class="full" data-go2="decks">رجوع للمجموعات</button>`;
+    }
+    const c = rv.q[rv.i];
+    return `<div class="mut" style="text-align:center">${rv.i + 1} / ${rv.q.length}</div><div class="card fc" style="text-align:center;min-height:180px;display:flex;flex-direction:column;justify-content:center">
+      <h2 style="margin:0">${esc(c.front)}</h2>${rv.shown ? `<div class="fcb">${esc(c.back)}</div>` : ""}</div>
+      ${rv.shown ? `<div class="row"><button class="full sec" data-act="fcAns" data-id="0">نسيتها</button><button class="full" data-act="fcAns" data-id="1">عرفتها</button></div>` : `<button class="full" data-act="fcShow">اعرض الإجابة</button>`}`;
+  }
+  act.fcShow = () => { rv.shown = true; render(); };
+  act.fcAns = (el, v) => run(async () => {
+    const c = rv.q[rv.i], knew = v === "1";
+    const box = knew ? Math.min(5, c.box + 1) : 0;
+    await db.upsert("card_progress", [{ user_id: me.id, card_id: c.id, box, due_at: new Date(Date.now() + (knew ? BOX_DAYS[box] : 0) * 864e5).toISOString() }]);
+    if (knew) rv.knew++; else rv.q.push({ ...c, box: 0 });
+    rv.i++; rv.shown = false;
+  });
+
+  // ---- امتحان تجريبي بوقت ----
+  let mk = null, mkT = null;
+  async function viewMock() {
+    if (mk && mk.done) {
+      const r = mk; mk = null;
+      return `<div class="card" style="text-align:center"><h3>النتيجة</h3><div class="bigcd">${r.score} / ${r.qs.length}</div><div class="mut">${Math.round((r.score / r.qs.length) * 100)}% · ${Math.floor(r.secs / 60)} دقيقة</div></div>` +
+        r.qs.map((q, i) => `<div class="card"><b>${i + 1}. ${esc(q.q)}</b>${q.options.map((o, j) => `<div class="opt ${j === q.answer ? "right" : r.picks[i] === j ? "wrong" : ""}">${esc(o)}${j === q.answer ? " ✓" : r.picks[i] === j ? " ✗" : ""}</div>`).join("")}${q.explain ? `<div class="expl">${esc(q.explain)}</div>` : ""}</div>`).join("") +
+        `<div class="mut" style="margin:8px 2px">أسئلة تدريب غير رسمية، مش بديل لامتحان الكلية. الأسئلة اللي غلطت فيها اتحفظت في بنك الأخطاء.</div><button class="full" data-go2="mock">امتحان تاني</button>`;
+    }
+    if (mk) {
+      const left = Math.max(0, Math.round((mk.end - Date.now()) / 1000));
+      return `<div class="card row" style="position:sticky;top:64px;z-index:3"><b>الوقت المتبقي</b><b class="bigcd" id="mkt">${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}</b></div>
+        <form data-act="mockSubmit">${mk.qs.map((q, i) => `<div class="card"><b>${i + 1}. ${esc(q.q)}</b>${q.options.map((o, j) => `<label class="opt"><input type="radio" name="q${i}" value="${j}"> ${esc(o)}</label>`).join("")}</div>`).join("")}<button class="full">تسليم</button></form>`;
+    }
+    const [res, qz] = await Promise.all([db.list("mock_results", { eq: { user_id: me.id }, order: ["created_at", false], limit: 5 }), db.list("quizzes")]);
+    const courses = [...new Set(qz.map((q) => q.course).filter(Boolean))].filter(vis);
+    return `<form class="card" data-act="mockStart"><b>ابدأ امتحان تجريبي</b><label>المادة</label><select name="course"><option value="">كل المواد</option>${courses.map((c) => `<option>${esc(c)}</option>`).join("")}</select>
+      <label>عدد الأسئلة</label><select name="n"><option>5</option><option selected>10</option><option>20</option><option>30</option></select>
+      <label>الوقت بالدقايق</label><input name="min" type="number" min="1" max="120" value="10"><button class="full">ابدأ</button></form>
+      ${res.length ? `<div class="card"><b>آخر محاولاتك</b>${res.map((r) => `<div class="row li"><span>${esc(r.course || "كل المواد")}</span><span>${r.score}/${r.total} · ${fmtDate(r.created_at)}</span></div>`).join("")}</div>` : ""}`;
+  }
+  act.mockStart = (f) => run(async () => {
+    const d = new FormData(f), course = d.get("course"), n = Number(d.get("n")), min = Number(d.get("min")) || 10;
+    const qz = (await db.list("quizzes")).filter((q) => (!course || q.course === course) && vis(q.course));
+    const ids = new Set(qz.map((q) => String(q.id)));
+    let qs = (await db.list("questions")).filter((q) => ids.has(String(q.quiz_id)));
+    if (!qs.length) throw new Error("مفيش أسئلة كفاية للمادة دي");
+    qs = qs.map((q) => [Math.random(), q]).sort((a, b) => a[0] - b[0]).slice(0, n).map((x) => x[1]);
+    mk = { qs, start: Date.now(), end: Date.now() + min * 60000, course: course || null };
+    clearInterval(mkT);
+    mkT = setInterval(() => { const el = document.getElementById("mkt"); if (!mk || mk.done || tab !== "mock") { clearInterval(mkT); return; } const l = Math.max(0, Math.round((mk.end - Date.now()) / 1000)); if (el) el.textContent = String(Math.floor(l / 60)).padStart(2, "0") + ":" + String(l % 60).padStart(2, "0"); if (l <= 0) { clearInterval(mkT); const fm = document.querySelector("form[data-act=mockSubmit]"); if (fm) fm.requestSubmit(); } }, 1000);
+  });
+  act.mockSubmit = (f) => run(async () => {
+    clearInterval(mkT);
+    const d = new FormData(f), qs = mk.qs;
+    const picks = qs.map((q, i) => (d.get("q" + i) == null ? -1 : Number(d.get("q" + i))));
+    const score = qs.filter((q, i) => q.answer === picks[i]).length;
+    const secs = Math.round((Date.now() - mk.start) / 1000);
+    await db.insert("mock_results", { user_id: me.id, course: mk.course, score, total: qs.length, secs });
+    const bad = qs.filter((q, i) => q.answer !== picks[i]).map((q) => ({ user_id: me.id, question_id: q.id }));
+    if (bad.length) await db.upsert("wrong_questions", bad);
+    const good = qs.filter((q, i) => q.answer === picks[i]).map((q) => q.id);
+    if (good.length) await db.delWhere("wrong_questions", { user_id: me.id }, "question_id", good);
+    mk = { done: true, score, qs, picks, secs };
+  });
+
+  // ---- مؤقت التركيز (بيشتغل والتطبيق مفتوح بس) ----
+  let fz = null, fzT = null;
+  const fzLog = () => lsj("focuslog", {});
+  const todayKey = () => new Date().toISOString().slice(0, 10);
+  async function viewFocus() {
+    const lg = fzLog(), mins = lg[todayKey()] || 0;
+    const week = Object.keys(lg).filter((k) => Date.now() - new Date(k) < 7 * 864e5).reduce((a, k) => a + lg[k], 0);
+    return `<div class="card" style="text-align:center"><div class="bigcd" id="fzt">${fz ? "" : "25:00"}</div><div class="mut" id="fzl">${fz ? "" : "جلسة مذاكرة 25 دقيقة ثم راحة 5"}</div>
+      <div class="row" style="margin-top:10px"><button class="full" data-act="fzStart" data-id="25">مذاكرة 25</button><button class="full sec" data-act="fzStart" data-id="5">راحة 5</button></div>
+      <button class="full sec" data-act="fzStop">إيقاف</button><div class="mut" style="margin-top:8px">المؤقت بيشتغل والتطبيق مفتوح بس. لو قفلته مش هيرن. للتنبيه وهو مقفول استخدم منبه الموبايل.</div></div>
+      <div class="card"><div class="row"><span>مذاكرة النهارده</span><b>${mins} دقيقة</b></div><div class="row"><span>آخر 7 أيام</span><b>${week} دقيقة</b></div></div>`;
+  }
+  const fzTick = () => {
+    const t = document.getElementById("fzt"); if (!fz) return;
+    const l = Math.max(0, Math.round((fz.end - Date.now()) / 1000));
+    if (t) t.textContent = String(Math.floor(l / 60)).padStart(2, "0") + ":" + String(l % 60).padStart(2, "0");
+    if (l <= 0) {
+      clearInterval(fzT); if (fz.study) { const lg = fzLog(); lg[todayKey()] = (lg[todayKey()] || 0) + fz.min; localStorage.setItem("focuslog", JSON.stringify(lg)); }
+      toast(fz.study ? "خلصت جلسة المذاكرة! خد راحة" : "الراحة خلصت"); try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch (e) {}
+      fz = null; if (tab === "focus") render();
+    }
+  };
+  act.fzStart = (el, m) => { clearInterval(fzT); fz = { end: Date.now() + Number(m) * 60000, min: Number(m), study: m === "25" }; const l = document.getElementById("fzl"); if (l) l.textContent = fz.study ? "ركّز..." : "راحة"; fzTick(); fzT = setInterval(fzTick, 1000); };
+  act.fzStop = () => { clearInterval(fzT); fz = null; render(); };
+
+  // ---- تقدمي (خاص بالطالب) ----
+  async function viewProgress() {
+    const [tasks, comps, atts, topics, tdone, prog, mocks, wr, qs, quizzes] = await Promise.all([db.tasks(), db.completions(), db.list("attempts", { eq: { user_id: me.id } }), db.list("topics"), db.list("topic_done", { eq: { user_id: me.id } }), db.list("card_progress", { eq: { user_id: me.id } }), db.list("mock_results", { eq: { user_id: me.id } }), db.list("wrong_questions", { eq: { user_id: me.id } }), db.list("questions", { sel: "id,quiz_id" }), db.list("quizzes")]);
+    const vt = tasks.filter((t) => vis(t.course)), mineT = new Set(comps.filter((c) => c.user_id === me.id).map((c) => c.task_id));
+    const td = vt.filter((t) => mineT.has(t.id)).length;
+    const avg = (a) => (a.length ? Math.round(a.reduce((s2, x) => s2 + (x.score / x.total) * 100, 0) / a.length) : null);
+    const doneT = new Set(tdone.map((x) => String(x.topic_id)));
+    const byC = {}; topics.filter((t) => vis(t.course)).forEach((t) => { const c = (byC[t.course] = byC[t.course] || { n: 0, d: 0 }); c.n++; if (doneT.has(String(t.id))) c.d++; });
+    const q2c = {}; qs.forEach((q) => { const z = quizzes.find((x) => String(x.id) === String(q.quiz_id)); q2c[q.id] = z && z.course; });
+    const weak = {}; wr.forEach((w) => { const c = q2c[w.question_id]; if (c) weak[c] = (weak[c] || 0) + 1; });
+    const bar = (p) => `<div class="bar"><i style="width:${p}%"></i></div>`;
+    return `<div class="card"><div class="row"><b>المهام</b><span>${td}/${vt.length}</span></div>${bar(vt.length ? Math.round((td / vt.length) * 100) : 0)}</div>
+      <div class="card"><div class="row"><b>الكويزات</b><span>${atts.length ? "متوسطك " + avg(atts) + "%" : "لسه"}</span></div><div class="mut">${new Set(atts.map((a) => a.quiz_id)).size} كويز اتحل</div></div>
+      <div class="card"><div class="row"><b>الامتحانات التجريبية</b><span>${mocks.length ? "متوسطك " + avg(mocks) + "%" : "لسه"}</span></div><div class="mut">${mocks.length} محاولة</div></div>
+      <div class="card"><div class="row"><b>كروت الحفظ</b><span>${prog.filter((p) => p.box >= 3).length} محفوظة</span></div><div class="mut">${prog.length} كارت اتراجع</div></div>
+      <div class="card"><b>خريطة المذاكرة</b>${Object.keys(byC).map((c) => `<div class="row li"><span>${esc(c)}</span><span>${byC[c].d}/${byC[c].n}</span></div>${bar(Math.round((byC[c].d / byC[c].n) * 100))}`).join("") || '<div class="mut">لسه</div>'}</div>
+      <div class="card"><b>محتاج مراجعة أكتر</b>${Object.keys(weak).sort((a, b) => weak[b] - weak[a]).map((c) => `<div class="row li"><span>${esc(c)}</span><span class="pill n">${weak[c]} غلطة</span></div>`).join("") || '<div class="mut">مفيش حاجة لسه</div>'}${wr.length ? `<button class="full sec" data-go2="mistakes">راجع أخطاءك</button>` : ""}</div>
+      <div class="mut" style="margin:6px 2px">التقدم ده ليك إنت بس ومحدش من زمايلك بيشوفه.</div>`;
+  }
 
   async function viewAI() {
     return `<div class="card" style="text-align:center"><div class="bigic">${ICONS.ai}</div><h3>قريبًا</h3>
