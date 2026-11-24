@@ -82,6 +82,8 @@
       async upsert(t, rows) { must(await sb.from(t).upsert(rows)); },
       async delWhere(t, eq, col, ids) { let q = sb.from(t).delete(); for (const k in eq) q = q.eq(k, eq[k]); if (col) q = q.in(col, ids); must(await q); },
       async setProfile(id, patch) { must(await sb.from("profiles").update(patch).eq("id", id)); },
+      async update(t, id, patch) { must(await sb.from(t).update(patch).eq("id", id)); },
+      async rpc(fn, args) { return must(await sb.rpc(fn, args)); },
     };
     // نسخة محفوظة للقراءة بدون إنترنت (بتتمسح عند الخروج)
     ["materials", "tasks", "completions", "list"].forEach((n) => {
@@ -139,6 +141,11 @@
       rotations: [{ id: 1, name: "باطنة", place: "مستشفى الجامعة", year: "", grp: "", start_date: iso(-2).slice(0, 10), end_date: iso(12).slice(0, 10), notes: "الحضور 8 صباحا" }],
       cases: [{ id: 1, title: "مريض بيشكو من ضيق تنفس (حالة افتراضية)", course: "باطنة", scenario: "مريض عنده 60 سنة، شاكي من ضيق تنفس من يومين.", questions: "إيه أول حاجة تقيّمها؟", answer: "التنفس والعلامات الحيوية وبلّغ المسؤول.", created_at: iso(-1) }],
       training_log: [{ id: 1, user_id: "b", day: iso(-1).slice(0, 10), hours: 6, dept: "باطنة", note: "" }],
+      links: [{ id: 1, title: "بوابة الطالب (MyU)", url: "https://example.com", category: "الكلية" }],
+      polls: [{ id: 1, question: "تفضلوا ميعاد المراجعة؟", options: "الأحد 6 مساء\nالاتنين 7 مساء", closed: false }],
+      poll_votes: [{ poll_id: 1, user_id: "c", choice: 0 }, { poll_id: 1, user_id: "e", choice: 1 }, { poll_id: 1, user_id: "f", choice: 0 }],
+      qa: [{ id: 1, user_id: "c", course: "تشريح", body: "هل الفصل الثالث داخل في الامتحان؟", approved: true, answer: "أيوه، داخل.", created_at: iso(-1) }],
+      issues: [],
       decks: [{ id: 1, title: "مصطلحات التشريح", course: "تشريح" }],
       cards: [{ id: 1, deck_id: 1, front: "Anterior", back: "أمامي" }, { id: 2, deck_id: 1, front: "Posterior", back: "خلفي" }, { id: 3, deck_id: 1, front: "Proximal", back: "قريب من الجذع" }],
       card_progress: [{ user_id: "b", card_id: 1, box: 3, due_at: iso(5) }],
@@ -168,7 +175,8 @@
       async setRole(id, role) { S.profiles.find((p) => p.id === id).role = role; save(); },
       async list(t, o = {}) {
         let a = [...(S[t] || [])];
-        if (["attempts", "topic_done", "wrong_questions", "card_progress", "mock_results", "training_log"].includes(t) && me && me.role === "student") a = a.filter((x) => x.user_id === me.id);
+        if (["attempts", "topic_done", "wrong_questions", "card_progress", "mock_results", "training_log", "issues", "poll_votes"].includes(t) && me && me.role === "student") a = a.filter((x) => x.user_id === me.id);
+        if (t === "qa" && me && me.role === "student") a = a.filter((x) => x.approved || x.user_id === me.id);
         if (o.eq) for (const k in o.eq) a = a.filter((x) => String(x[k]) === String(o.eq[k]));
         if (o.order) { const [k, asc] = o.order; a.sort((x, y) => (x[k] > y[k] ? 1 : x[k] < y[k] ? -1 : 0) * (asc === false ? -1 : 1)); }
         return a;
@@ -182,6 +190,8 @@
       async upsert(t, rows) { S[t] = S[t] || []; const kk = t === "card_progress" ? "card_id" : "question_id"; rows.forEach((r) => { const i = S[t].findIndex((x) => x.user_id === r.user_id && x[kk] === r[kk]); if (i >= 0) S[t][i] = r; else S[t].push(r); }); save(); },
       async delWhere(t, eq, col, ids) { S[t] = (S[t] || []).filter((x) => !(Object.keys(eq).every((k) => String(x[k]) === String(eq[k])) && (!col || ids.map(String).includes(String(x[col]))))); save(); },
       async setProfile(id, patch) { Object.assign(S.profiles.find((p) => p.id === id), patch); save(); },
+      async update(t, id, patch) { Object.assign(S[t].find((x) => String(x.id) === String(id)), patch); save(); },
+      async rpc(fn, a) { const c = {}; (S.poll_votes || []).filter((v) => String(v.poll_id) === String(a.pid)).forEach((v) => (c[v.choice] = (c[v.choice] || 0) + 1)); return Object.keys(c).map((k) => ({ choice: Number(k), n: c[k] })); },
       async del(t, id) { S[t] = S[t].filter((x) => String(x.id) !== String(id)); if (t === "quizzes") S.questions = S.questions.filter((q) => String(q.quiz_id) !== String(id)); save(); },
     };
     window.__demoLogin = async (id) => { S.cur = id; save(); await boot(); };
@@ -231,7 +241,7 @@
   const lsj = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } };
   const go = (t, p) => { tab = t; param = p == null ? null : p; render(); window.scrollTo(0, 0); };
   const NAVT = ["home", "tasks", "materials", "dash", "me"];
-  const TITLES = { gloss: "قاموس المصطلحات", skills: "قوايم المهارات", rot: "جدول التدريب", tlog: "ساعات التدريب", prep: "جهّز للتدريب", cases: "حالات تعليمية", decks: "كروت الحفظ", deck: "مراجعة", mock: "امتحان تجريبي", focus: "مؤقت التركيز", progress: "تقدمي", ann: "الإعلانات", mistakes: "بنك الأخطاء", schedule: "جدول المحاضرات", courses: "المقررات والامتحانات", course: "المقرر", quizzes: "الكويزات", quiz: "كويز", ai: "أدوات الذكاء الاصطناعي", team: "الفريق" };
+  const TITLES = { links: "روابط مهمة", polls: "تصويت", qa: "أسئلة وأجوبة", report: "بلاغ أو اقتراح", gloss: "قاموس المصطلحات", skills: "قوايم المهارات", rot: "جدول التدريب", tlog: "ساعات التدريب", prep: "جهّز للتدريب", cases: "حالات تعليمية", decks: "كروت الحفظ", deck: "مراجعة", mock: "امتحان تجريبي", focus: "مؤقت التركيز", progress: "تقدمي", ann: "الإعلانات", mistakes: "بنك الأخطاء", schedule: "جدول المحاضرات", courses: "المقررات والامتحانات", course: "المقرر", quizzes: "الكويزات", quiz: "كويز", ai: "أدوات الذكاء الاصطناعي", team: "الفريق" };
 
   async function render() {
     if (!me) return renderAuth("in");
@@ -239,7 +249,7 @@
     const tabs = [["home", I.home, "الرئيسية"], ["tasks", I.tasks, "المهام"], ["materials", I.book, "المواد"]];
     if (isStaff()) tabs.push(["dash", I.chart, "المتابعة"]);
     tabs.push(["me", I.user, "حسابي"]);
-    const known = ["gloss", "skills", "rot", "tlog", "prep", "cases", "decks", "deck", "mock", "focus", "progress", "mistakes", "ann", "home", "tasks", "materials", "dash", "me", "schedule", "courses", "course", "quizzes", "quiz", "ai", "team"];
+    const known = ["links", "polls", "qa", "report", "gloss", "skills", "rot", "tlog", "prep", "cases", "decks", "deck", "mock", "focus", "progress", "mistakes", "ann", "home", "tasks", "materials", "dash", "me", "schedule", "courses", "course", "quizzes", "quiz", "ai", "team"];
     if (!known.includes(tab) || (tab === "dash" && !isStaff()) || (tab === "team" && me.role !== "admin")) tab = "home";
     const sub = !NAVT.includes(tab);
     const head = tab === "home"
@@ -253,7 +263,7 @@
     $app.querySelectorAll("header [data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
     try {
       try { COURSES = await db.list("courses"); } catch (e) { COURSES = []; }
-      const v = { gloss: viewGlossary, skills: viewChecklists, rot: viewRotations, tlog: viewTlog, prep: viewPrep, cases: viewCases, decks: viewDecks, deck: viewDeck, mock: viewMock, focus: viewFocus, progress: viewProgress, ann: viewAnn, home: viewHome, tasks: viewTasks, materials: viewMaterials, dash: viewDash, team: viewTeam, me: viewMe, schedule: viewSchedule, courses: viewCourses, course: viewCourse, quizzes: viewQuizzes, quiz: viewQuiz, mistakes: () => { param = "mistakes"; return viewQuiz(); }, ai: viewAI }[tab];
+      const v = { links: viewLinks, polls: viewPolls, qa: viewQa, report: viewReport, gloss: viewGlossary, skills: viewChecklists, rot: viewRotations, tlog: viewTlog, prep: viewPrep, cases: viewCases, decks: viewDecks, deck: viewDeck, mock: viewMock, focus: viewFocus, progress: viewProgress, ann: viewAnn, home: viewHome, tasks: viewTasks, materials: viewMaterials, dash: viewDash, team: viewTeam, me: viewMe, schedule: viewSchedule, courses: viewCourses, course: viewCourse, quizzes: viewQuizzes, quiz: viewQuiz, mistakes: () => { param = "mistakes"; return viewQuiz(); }, ai: viewAI }[tab];
       document.getElementById("main").innerHTML = await v();
       bind();
       if (tab === "materials") bindMaterials();
@@ -315,7 +325,7 @@
     const exams = courses.filter((c) => c.exam_at && new Date(c.exam_at) > now).sort((a, b) => new Date(a.exam_at) - new Date(b.exam_at));
     const ex = exams[0];
     const ini = (me.name || "?").trim().charAt(0);
-    const boxes = [["ann", ICONS.bell, "الإعلانات"], ["tasks", ICONS.tasks, "المهام"], ["materials", ICONS.book, "المواد"], ["schedule", ICONS.cal, "جدول المحاضرات"], ["courses", ICONS.exam, "الامتحانات والمقررات"], ["quizzes", ICONS.quiz, "الكويزات"], ["mistakes", ICONS.cap, "بنك الأخطاء"], ["decks", ICONS.cards, "كروت الحفظ"], ["mock", ICONS.exam, "امتحان تجريبي"], ["focus", ICONS.timer, "مؤقت التركيز"], ["progress", ICONS.chart, "تقدمي"], ["gloss", ICONS.book, "قاموس المصطلحات"], ["skills", ICONS.tasks, "قوايم المهارات"], ["rot", ICONS.cal, "جدول التدريب"], ["tlog", ICONS.timer, "ساعات التدريب"], ["prep", ICONS.cap, "جهّز للتدريب"], ["cases", ICONS.quiz, "حالات تعليمية"], ["ai", ICONS.ai, "الذكاء الاصطناعي", "قريبًا"]];
+    const boxes = [["ann", ICONS.bell, "الإعلانات"], ["tasks", ICONS.tasks, "المهام"], ["materials", ICONS.book, "المواد"], ["schedule", ICONS.cal, "جدول المحاضرات"], ["courses", ICONS.exam, "الامتحانات والمقررات"], ["quizzes", ICONS.quiz, "الكويزات"], ["mistakes", ICONS.cap, "بنك الأخطاء"], ["decks", ICONS.cards, "كروت الحفظ"], ["mock", ICONS.exam, "امتحان تجريبي"], ["focus", ICONS.timer, "مؤقت التركيز"], ["progress", ICONS.chart, "تقدمي"], ["gloss", ICONS.book, "قاموس المصطلحات"], ["skills", ICONS.tasks, "قوايم المهارات"], ["rot", ICONS.cal, "جدول التدريب"], ["tlog", ICONS.timer, "ساعات التدريب"], ["prep", ICONS.cap, "جهّز للتدريب"], ["cases", ICONS.quiz, "حالات تعليمية"], ["qa", ICONS.quiz, "أسئلة وأجوبة"], ["polls", ICONS.chart, "تصويت"], ["links", ICONS.book, "روابط مهمة"], ["report", ICONS.bell, "بلاغ أو اقتراح"], ["ai", ICONS.ai, "الذكاء الاصطناعي", "قريبًا"]];
     if (isStaff()) boxes.push(["dash", ICONS.chart, "المتابعة"]);
     if (me.role === "admin") boxes.push(["team", ICONS.users, "الفريق"]);
     return `<div class="card prof"><div class="avatar">${esc(ini)}</div><div style="flex:1;min-width:0"><h3>${esc(me.name)}</h3>
@@ -579,6 +589,66 @@
   }
   act.addCase = (f) => run(async () => { const d = new FormData(f); await db.insert("cases", { title: d.get("title").trim(), course: d.get("course").trim() || null, scenario: d.get("scenario").trim(), questions: d.get("questions").trim() || null, answer: d.get("answer").trim() || null, created_by: me.id }); }, "اتحفظت");
   act.delCase = (el, id) => confirm("تحذف الحالة؟") && run(() => db.del("cases", id));
+
+
+  // ---- مرحلة 5: روابط، أسئلة، تصويت، بلاغات ----
+  async function viewLinks() {
+    const list = await db.list("links", { order: ["category", true] });
+    let h = "";
+    if (isStaff()) h += `<details class="card"><summary>+ إضافة رابط</summary><form data-act="addLink"><input name="title" placeholder="الاسم" required><input name="url" type="url" placeholder="https://..." required><input name="category" placeholder="التصنيف (الكلية، الخدمات...)"><button class="full">حفظ</button></form></details>`;
+    return h + (list.map((l) => `<div class="card row"><a href="${esc(l.url)}" target="_blank" rel="noopener" style="flex:1;text-decoration:none;color:inherit"><b>${esc(l.title)}</b><div class="mut">${esc(l.category || "")}</div></a>${isStaff() ? `<button class="bad" data-act="delLink" data-id="${l.id}">حذف</button>` : ""}</div>`).join("") || `<div class="empty">مفيش روابط لسه</div>`) + `<div class="mut" style="margin:6px 2px">روابط للمواقع الرسمية. التطبيق ده مش بديل لبوابة الكلية.</div>`;
+  }
+  act.addLink = (f) => run(async () => { const d = new FormData(f), u = d.get("url").trim(); if (!/^https:\/\//i.test(u)) throw new Error("الرابط لازم يبدأ بـ https://"); await db.insert("links", { title: d.get("title").trim(), url: u, category: d.get("category").trim() || null, created_by: me.id }); }, "اتحفظ");
+  act.delLink = (el, id) => confirm("تحذف الرابط؟") && run(() => db.del("links", id));
+
+  async function viewPolls() {
+    const [polls, mine] = await Promise.all([db.list("polls", { order: ["created_at", false], limit: 50 }), db.list("poll_votes", { eq: { user_id: me.id } })]);
+    const mv = {}; mine.forEach((v) => (mv[v.poll_id] = v.choice));
+    let h = "";
+    if (isStaff()) h += `<details class="card"><summary>+ تصويت جديد</summary><form data-act="addPoll"><input name="q" placeholder="السؤال" required><textarea name="opts" rows="4" placeholder="اختيار في كل سطر (من 2 لـ 6)" required></textarea><button class="full">نشر</button></form></details>`;
+    const cards = [];
+    for (const p of polls) {
+      const opts = p.options.split("\n").map((x) => x.trim()).filter(Boolean), voted = mv[p.id] !== undefined;
+      let cnt = {}; if (voted || p.closed) { try { (await db.rpc("poll_counts", { pid: p.id })).forEach((r) => (cnt[r.choice] = Number(r.n))); } catch (e) {} }
+      const tot = Object.values(cnt).reduce((a, b) => a + b, 0);
+      cards.push(`<div class="card"><div class="row"><h3>${esc(p.question)}</h3>${isStaff() ? `<span><button class="sec" data-act="togPoll" data-id="${p.id}:${p.closed ? 0 : 1}">${p.closed ? "فتح" : "قفل"}</button> <button class="bad" data-act="delPoll" data-id="${p.id}">حذف</button></span>` : ""}</div>
+        ${opts.map((o, i) => voted || p.closed ? `<div class="row li"><span>${esc(o)}${mv[p.id] === i ? " ✓" : ""}</span><b>${cnt[i] || 0}</b></div><div class="bar"><i style="width:${tot ? Math.round(((cnt[i] || 0) / tot) * 100) : 0}%"></i></div>` : `<button class="full sec" data-act="vote" data-id="${p.id}:${i}">${esc(o)}</button>`).join("")}
+        <div class="mut">${p.closed ? "التصويت اتقفل · " : ""}${voted || p.closed ? tot + " صوت. التصويت سري." : "اختار وهتشوف النتيجة"}</div></div>`);
+    }
+    return h + (cards.join("") || `<div class="empty">مفيش تصويت دلوقتي</div>`);
+  }
+  act.addPoll = (f) => run(async () => { const d = new FormData(f), o = String(d.get("opts")).split("\n").map((x) => x.trim()).filter(Boolean); if (o.length < 2 || o.length > 6) throw new Error("من 2 لـ 6 اختيارات"); await db.insert("polls", { question: d.get("q").trim(), options: o.join("\n"), created_by: me.id }); }, "اتنشر");
+  act.vote = (el, id) => { const [p, c] = id.split(":"); run(() => db.insert("poll_votes", { poll_id: Number(p), user_id: me.id, choice: Number(c) }).catch((e) => { throw new Error(/duplicate|23505/.test(e.message) ? "إنت صوّت قبل كده" : e.message); }), "اتسجل صوتك"); };
+  act.togPoll = (el, id) => { const [p, c] = id.split(":"); run(() => db.update("polls", p, { closed: c === "1" })); };
+  act.delPoll = (el, id) => confirm("تحذف التصويت؟") && run(() => db.del("polls", id));
+
+  async function viewQa() {
+    const list = await db.list("qa", { order: ["created_at", false], limit: 100 });
+    let h = `<details class="card"><summary>+ اسأل سؤال</summary><form data-act="addQa"><input name="course" list="qcl" placeholder="المادة"><datalist id="qcl">${COURSES.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist>
+      <textarea name="body" rows="3" maxlength="500" placeholder="سؤالك" required></textarea><button class="full">إرسال للمراجعة</button></form><div class="mut">السؤال بيظهر للكل بعد ما المشرف يوافق، من غير اسمك.</div></details>`;
+    const pend = list.filter((q) => !q.approved), ok = list.filter((q) => q.approved);
+    const card = (q) => `<div class="card"><div class="mut">${esc(q.course || "")} · ${fmtDate(q.created_at)}${!q.approved ? " · ⏳ بانتظار الموافقة" : ""}</div><div class="info" style="white-space:pre-wrap">${esc(q.body)}</div>
+      ${q.answer ? `<div style="white-space:pre-wrap"><b>الرد:</b> ${esc(q.answer)}</div>` : ""}
+      ${isStaff() ? `<form data-act="ansQa" data-id="${q.id}"><textarea name="a" rows="2" placeholder="اكتب رد">${esc(q.answer || "")}</textarea><div class="row"><button class="full">${q.approved ? "حفظ الرد" : "موافقة ونشر"}</button><button type="button" class="bad" data-act="delQa" data-id="${q.id}">حذف</button></div></form>` : q.user_id === me.id ? `<button class="bad" data-act="delQa" data-id="${q.id}">حذف سؤالي</button>` : ""}</div>`;
+    return h + (isStaff() && pend.length ? `<b style="margin:6px 2px;display:block">بانتظار المراجعة (${pend.length})</b>` + pend.map(card).join("") : pend.map(card).join("")) + ok.map(card).join("") + (!list.length ? `<div class="empty">مفيش أسئلة لسه</div>` : "");
+  }
+  act.addQa = (f) => run(async () => { const d = new FormData(f); await db.insert("qa", { user_id: me.id, course: d.get("course").trim() || null, body: d.get("body").trim() }); }, "اتبعت للمراجعة");
+  act.ansQa = (f, id) => run(async () => { const a = new FormData(f).get("a").trim(); await db.update("qa", id, { approved: true, answer: a || null }); }, "اتنشر");
+  act.delQa = (el, id) => confirm("تحذف السؤال؟") && run(() => db.del("qa", id));
+
+  async function viewReport() {
+    const list = await db.list("issues", { order: ["created_at", false], limit: 100 });
+    return `<div class="card"><form data-act="addIssue"><select name="kind"><option value="bug">مشكلة في التطبيق</option><option value="content">غلط في محتوى</option><option value="idea">اقتراح</option></select>
+      <textarea name="body" rows="4" maxlength="500" placeholder="اكتب بالتفصيل (من غير بيانات شخصية أو بيانات مرضى)" required></textarea><button class="full">إرسال</button></form></div>
+      <div class="mut" style="margin:6px 2px">${isStaff() ? "بتشوف كل البلاغات." : "بتشوف بلاغاتك إنت بس."}</div>` +
+      list.map((x) => `<div class="card"><div class="row"><span class="pill ${x.status === "done" ? "y" : "n"}">${x.status === "done" ? "تم" : "مفتوح"}</span><span class="mut">${({ bug: "مشكلة", content: "محتوى", idea: "اقتراح" })[x.kind]} · ${fmtDate(x.created_at)}</span></div><div class="info" style="white-space:pre-wrap">${esc(x.body)}</div>
+      ${isStaff() ? `<div class="row"><button class="sec" data-act="togIssue" data-id="${x.id}:${x.status === "done" ? "open" : "done"}">${x.status === "done" ? "إعادة فتح" : "تم الحل"}</button><button class="bad" data-act="delIssue" data-id="${x.id}">حذف</button></div>` : `<button class="bad" data-act="delIssue" data-id="${x.id}">حذف</button>`}</div>`).join("");
+  }
+  act.addIssue = (f) => run(async () => { const d = new FormData(f); await db.insert("issues", { user_id: me.id, kind: d.get("kind"), body: d.get("body").trim() }); }, "وصل. شكرا");
+  act.togIssue = (el, id) => { const [i, s2] = id.split(":"); run(() => db.update("issues", i, { status: s2 })); };
+  act.delIssue = (el, id) => confirm("تحذف؟") && run(() => db.del("issues", id));
+
+  act.shareApp = async () => { const u = location.origin + location.pathname; try { if (navigator.share) await navigator.share({ title: C.APP_NAME, url: u }); else { await navigator.clipboard.writeText(u); toast("اللينك اتنسخ"); } } catch (e) {} };
 
   async function viewAI() {
     return `<div class="card" style="text-align:center"><div class="bigic">${ICONS.ai}</div><h3>قريبًا</h3>
@@ -876,6 +946,7 @@
     return `<div class="card"><h3>${esc(me.name)}</h3><div class="mut">${esc(me.phone || "")} · ${esc(roleName[me.role])}</div></div>
       <form class="card" data-act="saveCohort"><b>فرقتي</b><select name="year"><option value="">اختار الفرقة</option>${YEARS.map((y) => `<option ${me.year === y ? "selected" : ""}>${y}</option>`).join("")}</select>
       <input name="grp" placeholder="المجموعة / السكشن (اختياري)" value="${esc(me.grp || "")}"><div class="mut">لما تختار فرقتك بتشوف مواد ومواعيد فرقتك بس.</div><button class="full">حفظ</button></form>
+      <button class="full sec" data-act="shareApp">مشاركة التطبيق مع زمايلك</button>
       <button class="full sec" data-act="out">تسجيل خروج</button>
       ${DEMO ? `<div class="card" style="margin-top:14px"><b>معاينة الأدوار (تجريبي)</b><div class="mut">اضغط عشان تدخل كأي حساب</div>${(await db.profiles()).map((p) => `<button class="sec full" data-act="demo" data-id="${esc(p.id)}">${esc(p.name)} (${roleName[p.role]})</button>`).join("")}</div>` : ""}`;
   }
