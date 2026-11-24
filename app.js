@@ -48,7 +48,18 @@
       },
       async signIn(phone, pw) { const r = await sb.auth.signInWithPassword({ email: emailOf(phone), password: pw }); if (r.error) throw new Error("الرقم أو كلمة السر غلط"); },
       signOut: () => sb.auth.signOut(),
-      async materials() { return must(await sb.from("materials").select("*").order("created_at", { ascending: false }).limit(1000)); },
+      async materials() {
+        const rows = must(await sb.from("materials").select("*").order("created_at", { ascending: false }).limit(1000));
+        // الملفات في مخزن خاص: بنطلّع لينك مؤقت (ساعة) للطالب المسجّل بس
+        const re = /\/storage\/v1\/object\/(?:public|sign)\/materials\/([^?]+)/;
+        const idx = [], paths = [];
+        rows.forEach((m, i) => { const x = m.url && re.exec(m.url); if (x) { idx.push(i); paths.push(decodeURIComponent(x[1])); } });
+        for (let k = 0; k < paths.length; k += 100) {
+          const r = await sb.storage.from("materials").createSignedUrls(paths.slice(k, k + 100), 3600);
+          if (r.data) r.data.forEach((d, j) => { if (d.signedUrl) rows[idx[k + j]].url = d.signedUrl; else rows[idx[k + j]].url = null; });
+        }
+        return rows;
+      },
       async addMaterial(m, file, uid) {
         let url = m.url || null;
         if (file) {
@@ -339,7 +350,7 @@
       ${ex ? `<div class="card next" data-go2="course" data-p="${ex.id}"><span class="ic">${ICONS.exam}</span><div><div class="mut">أقرب امتحان: ${esc(ex.name)}</div><b data-cd="${ex.exam_at}"></b></div></div>` : ""}
       ${(() => { const seen = Number(localStorage.getItem("annseen") || 0); const un = anns.filter((a) => new Date(a.created_at) > seen).length; const top = anns.filter((a) => a.pinned)[0] || anns[0];
         return top ? `<div class="card next" data-go2="ann"><span class="ic">${ICONS.bell}</span><div><div class="mut">إعلان${un ? ` · ${un} جديد` : ""}</div><b>${esc(top.title)}</b></div></div>` : ""; })()}
-      ${(() => { const r = lsj("recent", [])[0]; return r ? `<a class="card next" href="${esc(r.url)}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit"><span class="ic">${ICONS.book}</span><div><div class="mut">كمّل من حيث وقفت</div><b>${esc(r.title)}</b></div></a>` : ""; })()}
+      ${(() => { const r = lsj("recent", [])[0]; return r ? `<div class="card next" data-go2="materials" style="cursor:pointer"><span class="ic">${ICONS.book}</span><div><div class="mut">كمّل من حيث وقفت</div><b>${esc(r.title)}</b></div></div>` : ""; })()}
       ${alerts.length ? `<div class="card"><b>تنبيهات</b>${alerts.slice(0, 5).map((a) => `<div class="alert ${a[0]}" data-go2="${a[2]}">${esc(a[1])}</div>`).join("")}</div>` : ""}
       <div class="grid">${boxes.map((b) => `<button class="box" data-go2="${b[0]}"><span class="ic">${b[1]}</span><span>${b[2]}</span>${b[3] ? `<small>${b[3]}</small>` : ""}</button>`).join("")}</div>`;
   }
