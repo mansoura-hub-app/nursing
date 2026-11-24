@@ -48,7 +48,7 @@
       },
       async signIn(phone, pw) { const r = await sb.auth.signInWithPassword({ email: emailOf(phone), password: pw }); if (r.error) throw new Error("الرقم أو كلمة السر غلط"); },
       signOut: () => sb.auth.signOut(),
-      async materials() { return must(await sb.from("materials").select("*").order("created_at", { ascending: false })); },
+      async materials() { return must(await sb.from("materials").select("*").order("created_at", { ascending: false }).limit(1000)); },
       async addMaterial(m, file, uid) {
         let url = m.url || null;
         if (file) {
@@ -58,7 +58,7 @@
           if (up.error) throw new Error(up.error.message);
           url = sb.storage.from("materials").getPublicUrl(path).data.publicUrl;
         }
-        must(await sb.from("materials").insert({ title: m.title, course: m.course, url, created_by: uid }));
+        must(await sb.from("materials").insert({ title: m.title, course: m.course, url, created_by: uid, term: m.term || null, version: m.version || 1 }));
       },
       async delMaterial(id) { must(await sb.from("materials").delete().eq("id", id)); },
       async tasks() { return must(await sb.from("tasks").select("*").order("due_at", { ascending: true, nullsFirst: false })); },
@@ -146,6 +146,9 @@
       poll_votes: [{ poll_id: 1, user_id: "c", choice: 0 }, { poll_id: 1, user_id: "e", choice: 1 }, { poll_id: 1, user_id: "f", choice: 0 }],
       qa: [{ id: 1, user_id: "c", course: "تشريح", body: "هل الفصل الثالث داخل في الامتحان؟", approved: true, answer: "أيوه، داخل.", created_at: iso(-1) }],
       issues: [],
+      summaries: [{ id: 1, user_id: "c", course: "تشريح", title: "ملخص الجهاز العصبي", body: "الجهاز العصبي المركزي: المخ والنخاع الشوكي.\nالطرفي: الأعصاب القحفية والشوكية.", approved: true, created_at: iso(-1) }, { id: 2, user_id: "b", course: "تشريح", title: "ملخصي للعضلات", body: "نص تجريبي للملخص بانتظار الموافقة.", approved: false, created_at: iso(0) }],
+      study_sessions: [{ id: 1, user_id: "c", course: "تشريح", title: "مراجعة تشريح قبل الامتحان", starts_at: iso(2), place: "مكتبة الكلية", note: "هنراجع الفصل 3", approved: true }],
+      session_members: [{ session_id: 1, user_id: "b" }],
       decks: [{ id: 1, title: "مصطلحات التشريح", course: "تشريح" }],
       cards: [{ id: 1, deck_id: 1, front: "Anterior", back: "أمامي" }, { id: 2, deck_id: 1, front: "Posterior", back: "خلفي" }, { id: 3, deck_id: 1, front: "Proximal", back: "قريب من الجذع" }],
       card_progress: [{ user_id: "b", card_id: 1, box: 3, due_at: iso(5) }],
@@ -175,8 +178,8 @@
       async setRole(id, role) { S.profiles.find((p) => p.id === id).role = role; save(); },
       async list(t, o = {}) {
         let a = [...(S[t] || [])];
-        if (["attempts", "topic_done", "wrong_questions", "card_progress", "mock_results", "training_log", "issues", "poll_votes"].includes(t) && me && me.role === "student") a = a.filter((x) => x.user_id === me.id);
-        if (t === "qa" && me && me.role === "student") a = a.filter((x) => x.approved || x.user_id === me.id);
+        if (["attempts", "topic_done", "wrong_questions", "card_progress", "mock_results", "training_log", "issues", "poll_votes", "material_notes", "session_members"].includes(t) && me && me.role === "student") a = a.filter((x) => x.user_id === me.id);
+        if ((t === "qa" || t === "summaries" || t === "study_sessions") && me && me.role === "student") a = a.filter((x) => x.approved || x.user_id === me.id);
         if (o.eq) for (const k in o.eq) a = a.filter((x) => String(x[k]) === String(o.eq[k]));
         if (o.order) { const [k, asc] = o.order; a.sort((x, y) => (x[k] > y[k] ? 1 : x[k] < y[k] ? -1 : 0) * (asc === false ? -1 : 1)); }
         return a;
@@ -187,7 +190,7 @@
         if (Array.isArray(row)) { row.forEach((r) => S[t].push(mk(r))); save(); return row; }
         const r = mk(row); S[t].push(r); save(); return r;
       },
-      async upsert(t, rows) { S[t] = S[t] || []; const kk = t === "card_progress" ? "card_id" : "question_id"; rows.forEach((r) => { const i = S[t].findIndex((x) => x.user_id === r.user_id && x[kk] === r[kk]); if (i >= 0) S[t][i] = r; else S[t].push(r); }); save(); },
+      async upsert(t, rows) { S[t] = S[t] || []; const kk = t === "card_progress" ? "card_id" : t === "material_notes" ? "material_id" : "question_id"; rows.forEach((r) => { const i = S[t].findIndex((x) => x.user_id === r.user_id && x[kk] === r[kk]); if (i >= 0) S[t][i] = r; else S[t].push(r); }); save(); },
       async delWhere(t, eq, col, ids) { S[t] = (S[t] || []).filter((x) => !(Object.keys(eq).every((k) => String(x[k]) === String(eq[k])) && (!col || ids.map(String).includes(String(x[col]))))); save(); },
       async setProfile(id, patch) { Object.assign(S.profiles.find((p) => p.id === id), patch); save(); },
       async update(t, id, patch) { Object.assign(S[t].find((x) => String(x.id) === String(id)), patch); save(); },
@@ -241,7 +244,7 @@
   const lsj = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } };
   const go = (t, p) => { tab = t; param = p == null ? null : p; render(); window.scrollTo(0, 0); };
   const NAVT = ["home", "tasks", "materials", "dash", "me"];
-  const TITLES = { links: "روابط مهمة", polls: "تصويت", qa: "أسئلة وأجوبة", report: "بلاغ أو اقتراح", gloss: "قاموس المصطلحات", skills: "قوايم المهارات", rot: "جدول التدريب", tlog: "ساعات التدريب", prep: "جهّز للتدريب", cases: "حالات تعليمية", decks: "كروت الحفظ", deck: "مراجعة", mock: "امتحان تجريبي", focus: "مؤقت التركيز", progress: "تقدمي", ann: "الإعلانات", mistakes: "بنك الأخطاء", schedule: "جدول المحاضرات", courses: "المقررات والامتحانات", course: "المقرر", quizzes: "الكويزات", quiz: "كويز", ai: "أدوات الذكاء الاصطناعي", team: "الفريق" };
+  const TITLES = { sums: "ملخصات الطلبة", ses: "مجموعات المذاكرة", links: "روابط مهمة", polls: "تصويت", qa: "أسئلة وأجوبة", report: "بلاغ أو اقتراح", gloss: "قاموس المصطلحات", skills: "قوايم المهارات", rot: "جدول التدريب", tlog: "ساعات التدريب", prep: "جهّز للتدريب", cases: "حالات تعليمية", decks: "كروت الحفظ", deck: "مراجعة", mock: "امتحان تجريبي", focus: "مؤقت التركيز", progress: "تقدمي", ann: "الإعلانات", mistakes: "بنك الأخطاء", schedule: "جدول المحاضرات", courses: "المقررات والامتحانات", course: "المقرر", quizzes: "الكويزات", quiz: "كويز", ai: "أدوات الذكاء الاصطناعي", team: "الفريق" };
 
   async function render() {
     if (!me) return renderAuth("in");
@@ -249,7 +252,7 @@
     const tabs = [["home", I.home, "الرئيسية"], ["tasks", I.tasks, "المهام"], ["materials", I.book, "المواد"]];
     if (isStaff()) tabs.push(["dash", I.chart, "المتابعة"]);
     tabs.push(["me", I.user, "حسابي"]);
-    const known = ["links", "polls", "qa", "report", "gloss", "skills", "rot", "tlog", "prep", "cases", "decks", "deck", "mock", "focus", "progress", "mistakes", "ann", "home", "tasks", "materials", "dash", "me", "schedule", "courses", "course", "quizzes", "quiz", "ai", "team"];
+    const known = ["sums", "ses", "links", "polls", "qa", "report", "gloss", "skills", "rot", "tlog", "prep", "cases", "decks", "deck", "mock", "focus", "progress", "mistakes", "ann", "home", "tasks", "materials", "dash", "me", "schedule", "courses", "course", "quizzes", "quiz", "ai", "team"];
     if (!known.includes(tab) || (tab === "dash" && !isStaff()) || (tab === "team" && me.role !== "admin")) tab = "home";
     const sub = !NAVT.includes(tab);
     const head = tab === "home"
@@ -263,7 +266,7 @@
     $app.querySelectorAll("header [data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
     try {
       try { COURSES = await db.list("courses"); } catch (e) { COURSES = []; }
-      const v = { links: viewLinks, polls: viewPolls, qa: viewQa, report: viewReport, gloss: viewGlossary, skills: viewChecklists, rot: viewRotations, tlog: viewTlog, prep: viewPrep, cases: viewCases, decks: viewDecks, deck: viewDeck, mock: viewMock, focus: viewFocus, progress: viewProgress, ann: viewAnn, home: viewHome, tasks: viewTasks, materials: viewMaterials, dash: viewDash, team: viewTeam, me: viewMe, schedule: viewSchedule, courses: viewCourses, course: viewCourse, quizzes: viewQuizzes, quiz: viewQuiz, mistakes: () => { param = "mistakes"; return viewQuiz(); }, ai: viewAI }[tab];
+      const v = { sums: viewSummaries, ses: viewSessions, links: viewLinks, polls: viewPolls, qa: viewQa, report: viewReport, gloss: viewGlossary, skills: viewChecklists, rot: viewRotations, tlog: viewTlog, prep: viewPrep, cases: viewCases, decks: viewDecks, deck: viewDeck, mock: viewMock, focus: viewFocus, progress: viewProgress, ann: viewAnn, home: viewHome, tasks: viewTasks, materials: viewMaterials, dash: viewDash, team: viewTeam, me: viewMe, schedule: viewSchedule, courses: viewCourses, course: viewCourse, quizzes: viewQuizzes, quiz: viewQuiz, mistakes: () => { param = "mistakes"; return viewQuiz(); }, ai: viewAI }[tab];
       document.getElementById("main").innerHTML = await v();
       bind();
       if (tab === "materials") bindMaterials();
@@ -325,7 +328,7 @@
     const exams = courses.filter((c) => c.exam_at && new Date(c.exam_at) > now).sort((a, b) => new Date(a.exam_at) - new Date(b.exam_at));
     const ex = exams[0];
     const ini = (me.name || "?").trim().charAt(0);
-    const boxes = [["ann", ICONS.bell, "الإعلانات"], ["tasks", ICONS.tasks, "المهام"], ["materials", ICONS.book, "المواد"], ["schedule", ICONS.cal, "جدول المحاضرات"], ["courses", ICONS.exam, "الامتحانات والمقررات"], ["quizzes", ICONS.quiz, "الكويزات"], ["mistakes", ICONS.cap, "بنك الأخطاء"], ["decks", ICONS.cards, "كروت الحفظ"], ["mock", ICONS.exam, "امتحان تجريبي"], ["focus", ICONS.timer, "مؤقت التركيز"], ["progress", ICONS.chart, "تقدمي"], ["gloss", ICONS.book, "قاموس المصطلحات"], ["skills", ICONS.tasks, "قوايم المهارات"], ["rot", ICONS.cal, "جدول التدريب"], ["tlog", ICONS.timer, "ساعات التدريب"], ["prep", ICONS.cap, "جهّز للتدريب"], ["cases", ICONS.quiz, "حالات تعليمية"], ["qa", ICONS.quiz, "أسئلة وأجوبة"], ["polls", ICONS.chart, "تصويت"], ["links", ICONS.book, "روابط مهمة"], ["report", ICONS.bell, "بلاغ أو اقتراح"], ["ai", ICONS.ai, "الذكاء الاصطناعي", "قريبًا"]];
+    const boxes = [["ann", ICONS.bell, "الإعلانات"], ["tasks", ICONS.tasks, "المهام"], ["materials", ICONS.book, "المواد"], ["schedule", ICONS.cal, "جدول المحاضرات"], ["courses", ICONS.exam, "الامتحانات والمقررات"], ["quizzes", ICONS.quiz, "الكويزات"], ["mistakes", ICONS.cap, "بنك الأخطاء"], ["decks", ICONS.cards, "كروت الحفظ"], ["mock", ICONS.exam, "امتحان تجريبي"], ["focus", ICONS.timer, "مؤقت التركيز"], ["progress", ICONS.chart, "تقدمي"], ["gloss", ICONS.book, "قاموس المصطلحات"], ["skills", ICONS.tasks, "قوايم المهارات"], ["rot", ICONS.cal, "جدول التدريب"], ["tlog", ICONS.timer, "ساعات التدريب"], ["prep", ICONS.cap, "جهّز للتدريب"], ["cases", ICONS.quiz, "حالات تعليمية"], ["qa", ICONS.quiz, "أسئلة وأجوبة"], ["sums", ICONS.book, "ملخصات الطلبة"], ["ses", ICONS.users, "مجموعات المذاكرة"], ["polls", ICONS.chart, "تصويت"], ["links", ICONS.book, "روابط مهمة"], ["report", ICONS.bell, "بلاغ أو اقتراح"], ["ai", ICONS.ai, "الذكاء الاصطناعي", "قريبًا"]];
     if (isStaff()) boxes.push(["dash", ICONS.chart, "المتابعة"]);
     if (me.role === "admin") boxes.push(["team", ICONS.users, "الفريق"]);
     return `<div class="card prof"><div class="avatar">${esc(ini)}</div><div style="flex:1;min-width:0"><h3>${esc(me.name)}</h3>
@@ -650,6 +653,52 @@
 
   act.shareApp = async () => { const u = location.origin + location.pathname; try { if (navigator.share) await navigator.share({ title: C.APP_NAME, url: u }); else { await navigator.clipboard.writeText(u); toast("اللينك اتنسخ"); } } catch (e) {} };
 
+
+  act.archMat = (el, id) => { const [m, a] = id.split(":"); run(() => db.update("materials", m, { archived: a === "1" }), a === "1" ? "اتأرشف" : "اترجع"); };
+  act.prev = async (el, id) => {
+    const m = (await db.materials()).find((x) => String(x.id) === String(id)); if (!m) return;
+    let note = ""; try { const r = await db.list("material_notes", { eq: { material_id: m.id } }); note = (r[0] && r[0].body) || ""; } catch (e) {}
+    const ov = document.createElement("div"); ov.id = "pv"; ov.style.cssText = "position:fixed;inset:0;background:var(--bg,#f0faf8);z-index:50;display:flex;flex-direction:column";
+    ov.innerHTML = `<div class="row" style="padding:10px;background:var(--ac);color:var(--actx)"><b style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(m.title)}</b><button class="sec" id="pvx">إغلاق</button></div>
+      <iframe src="${esc(m.url)}" style="flex:1;border:0;width:100%;background:#fff"></iframe>
+      <div style="padding:8px"><textarea id="pvn" rows="3" maxlength="2000" placeholder="ملاحظاتك على الملف (خاصة بيك، محدش بيشوفها)">${esc(note)}</textarea><div class="row"><button class="full" id="pvs">حفظ الملاحظة</button><a class="file" href="${esc(m.url)}" target="_blank" rel="noopener">فتح في صفحة</a></div></div>`;
+    document.body.appendChild(ov);
+    document.getElementById("pvx").onclick = () => ov.remove();
+    document.getElementById("pvs").onclick = async () => { try { const b = document.getElementById("pvn").value.trim(); if (b) await db.upsert("material_notes", [{ user_id: me.id, material_id: m.id, body: b }]); else await db.delWhere("material_notes", { user_id: me.id, material_id: m.id }); toast("اتحفظت"); } catch (e) { toast(e.message); } };
+  };
+
+  async function viewSummaries() {
+    const list = await db.list("summaries", { order: ["created_at", false], limit: 100 });
+    let h = `<details class="card"><summary>+ شارك ملخص</summary><form data-act="addSum"><input name="title" placeholder="عنوان الملخص" required maxlength="120"><input name="course" list="scl" placeholder="المادة"><datalist id="scl">${COURSES.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist>
+      <textarea name="body" rows="8" maxlength="4000" placeholder="اكتب الملخص (نص فقط)" required></textarea><button class="full">إرسال للمراجعة</button></form>
+      <div class="mut">بيظهر للكل بعد موافقة المشرف، من غير اسمك. اكتب بكلماتك. ممنوع نسخ كتب أو بيانات مرضى.</div></details>`;
+    const card = (q) => `<div class="card"><div class="mut">${esc(q.course || "")} · ${fmtDate(q.created_at)}${!q.approved ? " · ⏳ بانتظار الموافقة" : ""}</div><h3>${esc(q.title)}</h3><div class="info" style="white-space:pre-wrap">${esc(q.body)}</div>
+      <div class="row">${isStaff() && !q.approved ? `<button class="full" data-act="okSum" data-id="${q.id}">موافقة ونشر</button>` : ""}${isStaff() || q.user_id === me.id ? `<button class="bad" data-act="delSum" data-id="${q.id}">حذف</button>` : ""}</div></div>`;
+    return h + (list.length ? list.filter((x) => !x.approved).map(card).join("") + list.filter((x) => x.approved).map(card).join("") : `<div class="empty">مفيش ملخصات لسه</div>`);
+  }
+  act.addSum = (f) => run(async () => { const d = new FormData(f); await db.insert("summaries", { user_id: me.id, course: d.get("course").trim() || null, title: d.get("title").trim(), body: d.get("body").trim() }); }, "اتبعت للمراجعة");
+  act.okSum = (el, id) => run(() => db.update("summaries", id, { approved: true }), "اتنشر");
+  act.delSum = (el, id) => confirm("تحذف؟") && run(() => db.del("summaries", id));
+
+  async function viewSessions() {
+    const [list, mine] = await Promise.all([db.list("study_sessions", { order: ["starts_at", true], limit: 100 }), db.list("session_members", { eq: { user_id: me.id } })]);
+    const joined = new Set(mine.map((x) => String(x.session_id)));
+    let cnt = {}; try { (await db.rpc("session_counts", {})).forEach((r) => (cnt[r.session_id] = Number(r.n))); } catch (e) {}
+    let h = `<details class="card"><summary>+ اقترح مجموعة مذاكرة</summary><form data-act="addSes"><input name="title" placeholder="العنوان (مثلا: مراجعة تشريح)" required maxlength="100"><input name="course" list="ssl" placeholder="المادة"><datalist id="ssl">${COURSES.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist>
+      <label>الميعاد</label><input name="at" type="datetime-local" required><input name="place" maxlength="120" placeholder="المكان أو لينك مكالمة"><input name="note" maxlength="200" placeholder="ملاحظة (اختياري)"><button class="full">إرسال للمراجعة</button></form>
+      <div class="mut">بتظهر بعد موافقة المشرف. ما تكتبش رقمك الشخصي.</div></details>`;
+    const now = Date.now();
+    const card = (x) => `<div class="card"><div class="row"><h3>${esc(x.title)}</h3>${!x.approved ? `<span class="pill n">بانتظار الموافقة</span>` : ""}</div><div class="mut">${esc(x.course || "")}</div><div class="info">${new Date(x.starts_at).toLocaleString("ar-EG", { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" })}</div>
+      ${x.place ? `<div>📍 ${esc(x.place)}</div>` : ""}${x.note ? `<div class="mut">${esc(x.note)}</div>` : ""}
+      <div class="row">${x.approved ? `<button class="${joined.has(String(x.id)) ? "sec" : "full"}" data-act="joinSes" data-id="${x.id}:${joined.has(String(x.id)) ? 0 : 1}">${joined.has(String(x.id)) ? "إلغاء الانضمام" : "هنضم"} (${cnt[x.id] || 0})</button>` : ""}${isStaff() && !x.approved ? `<button class="full" data-act="okSes" data-id="${x.id}">موافقة</button>` : ""}${isStaff() || x.user_id === me.id ? `<button class="bad" data-act="delSes" data-id="${x.id}">حذف</button>` : ""}</div></div>`;
+    const up = list.filter((x) => new Date(x.starts_at) > now - 36e5);
+    return h + (up.map(card).join("") || `<div class="empty">مفيش مجموعات جاية</div>`);
+  }
+  act.addSes = (f) => run(async () => { const d = new FormData(f); await db.insert("study_sessions", { user_id: me.id, course: d.get("course").trim() || null, title: d.get("title").trim(), starts_at: new Date(d.get("at")).toISOString(), place: d.get("place").trim() || null, note: d.get("note").trim() || null }); }, "اتبعت للمراجعة");
+  act.okSes = (el, id) => run(() => db.update("study_sessions", id, { approved: true }), "اتنشرت");
+  act.delSes = (el, id) => confirm("تحذف؟") && run(() => db.del("study_sessions", id));
+  act.joinSes = (el, id) => { const [sid, j] = id.split(":"); run(async () => { if (j === "1") await db.insert("session_members", { session_id: Number(sid), user_id: me.id }); else await db.delWhere("session_members", { user_id: me.id, session_id: Number(sid) }); }); };
+
   async function viewAI() {
     return `<div class="card" style="text-align:center"><div class="bigic">${ICONS.ai}</div><h3>قريبًا</h3>
       <div class="mut">تلخيص المحاضرات وعمل أسئلة منها بالذكاء الاصطناعي. بنجهزها وهتظهر هنا أول ما تجهز.</div></div>`;
@@ -871,18 +920,19 @@
     let h = "";
     if (isStaff()) h += `<details class="card"><summary>+ رفع ملف أو لينك</summary>
       <form data-act="addMat"><input name="title" placeholder="اسم الملف (مثلا: محاضرة 3)" required><input name="course" list="mcl" placeholder="المادة"><datalist id="mcl">${COURSES.map((c) => `<option value="${esc(c.name)}">`).join("")}</datalist>
+      <input name="term" placeholder="الترم (مثلا: ترم أول 2026)"><label>نسخة جديدة من ملف قديم؟ (اختياري، القديم هيتأرشف)</label><select name="repl"><option value="">لا، ملف جديد</option>${list.filter((m) => !m.archived).map((m) => `<option value="${m.id}">${esc(m.title)}</option>`).join("")}</select>
       <label>اختار ملف (PDF أو صورة، لحد 50 ميجا)</label><input name="file" type="file">
       <label>أو حط لينك بدل الملف</label><input name="url" type="url" placeholder="https://">
       <button class="full">رفع</button></form></details>`;
     if (!list.length) return h + `<div class="empty">مفيش ملفات لسه</div>`;
-    h += `<input id="msearch" type="search" placeholder="دوّر على ملف أو مادة..."><div class="chips"><button class="sec on" data-f="all">الكل</button><button class="sec" data-f="fav">⭐ المفضلة</button>${[...new Set(list.map((m) => m.course || "عام"))].map((c) => `<button class="sec" data-f="c:${esc(c)}">${esc(c)}</button>`).join("")}</div><div id="mlist">`;
+    h += `<input id="msearch" type="search" placeholder="دوّر على ملف أو مادة..."><div class="chips"><button class="sec on" data-f="all">الكل</button><button class="sec" data-f="fav">⭐ المفضلة</button><button class="sec" data-f="arch">📦 الأرشيف</button>${[...new Set(list.map((m) => m.course || "عام"))].map((c) => `<button class="sec" data-f="c:${esc(c)}">${esc(c)}</button>`).join("")}</div><div id="mlist">`;
     const by = {};
     list.forEach((m) => (by[m.course || "عام"] = by[m.course || "عام"] || []).push(m));
     Object.keys(by).forEach((c) => {
-      h += `<div class="grp" data-c="${esc(c)}"><h3 style="margin:16px 0 8px">${esc(c)}</h3>` + by[c].map((m) => `<div class="card mi" data-s="${esc((m.title + " " + c).toLowerCase())}" data-fav="${favs.includes(String(m.id)) ? 1 : 0}"><div class="row"><div><b>${esc(m.title)}</b><div class="mut">${fmtDate(m.created_at)}</div></div>
+      h += `<div class="grp" data-c="${esc(c)}"><h3 style="margin:16px 0 8px">${esc(c)}</h3>` + by[c].map((m) => `<div class="card mi" data-s="${esc((m.title + " " + c).toLowerCase())}" data-fav="${favs.includes(String(m.id)) ? 1 : 0}" data-arch="${m.archived ? 1 : 0}"><div class="row"><div><b>${esc(m.title)}</b>${(m.version || 1) > 1 ? ` <span class="pill y">نسخة ${m.version}</span>` : ""}${m.archived ? ` <span class="pill n">أرشيف</span>` : ""}<div class="mut">${fmtDate(m.created_at)}${m.term ? " · " + esc(m.term) : ""}</div></div>
         <div class="row"><button class="star ${favs.includes(String(m.id)) ? "on" : ""}" data-act="fav" data-id="${m.id}" aria-label="مفضلة">${ICONS.star}</button>
-        ${m.url ? `<a class="file" data-open="${m.id}" data-t="${esc(m.title)}" href="${esc(m.url)}" target="_blank" rel="noopener">فتح</a>` : ""}</div></div>
-        ${isStaff() ? `<button class="bad" data-act="delMat" data-id="${m.id}">حذف</button>` : ""}</div>`).join("") + `</div>`;
+        ${m.url ? `<button class="sec" data-act="prev" data-id="${m.id}">معاينة</button><a class="file" data-open="${m.id}" data-t="${esc(m.title)}" href="${esc(m.url)}" target="_blank" rel="noopener">فتح</a>` : ""}</div></div>
+        ${isStaff() ? `<div class="row"><button class="sec" data-act="archMat" data-id="${m.id}:${m.archived ? 0 : 1}">${m.archived ? "إرجاع من الأرشيف" : "أرشفة"}</button><button class="bad" data-act="delMat" data-id="${m.id}">حذف</button></div>` : ""}</div>`).join("") + `</div>`;
     });
     return h + `</div><div class="empty" id="mnone" hidden>مفيش نتيجة</div>`;
   }
@@ -893,7 +943,7 @@
       const t = q.value.trim().toLowerCase(); let any = false;
       document.querySelectorAll(".mi").forEach((el) => {
         const g = el.closest(".grp").dataset.c;
-        const ok = (!t || el.dataset.s.includes(t)) && (mFilter === "all" || (mFilter === "fav" && el.dataset.fav === "1") || mFilter === "c:" + g);
+        const ar = el.dataset.arch === "1"; const ok = (!t || el.dataset.s.includes(t)) && (mFilter === "arch" ? ar : !ar) && (mFilter === "all" || mFilter === "arch" || (mFilter === "fav" && el.dataset.fav === "1") || mFilter === "c:" + g);
         el.hidden = !ok; if (ok) any = true;
       });
       document.querySelectorAll(".grp").forEach((g) => (g.hidden = !g.querySelector(".mi:not([hidden])")));
@@ -911,7 +961,9 @@
     if (!(file && file.size) && !url) throw new Error("اختار ملف أو حط لينك");
     if (file && file.size > 50 * 1024 * 1024) throw new Error("الملف أكبر من 50 ميجا");
     toast("جاري الرفع...");
-    await db.addMaterial({ title: d.get("title").trim(), course: d.get("course").trim(), url }, file && file.size ? file : null, me.id);
+    const old = d.get("repl") ? (await db.materials()).find((m) => String(m.id) === String(d.get("repl"))) : null;
+    await db.addMaterial({ title: d.get("title").trim(), course: d.get("course").trim(), url, term: String(d.get("term") || "").trim(), version: old ? (old.version || 1) + 1 : 1 }, file && file.size ? file : null, me.id);
+    if (old) await db.update("materials", old.id, { archived: true });
   }, "اترفع");
   act.delMat = (el, id) => confirm("تحذف الملف؟") && run(() => db.delMaterial(isNaN(id) ? id : Number(id)));
 
