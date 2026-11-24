@@ -134,6 +134,11 @@
       topics: [{ id: 1, course: "تشريح", title: "الجهاز العصبي", ord: 1 }, { id: 2, course: "تشريح", title: "الجهاز العضلي", ord: 2 }, { id: 3, course: "تشريح", title: "الهيكل العظمي", ord: 3 }],
       topic_done: [{ topic_id: 1, user_id: "b" }],
       wrong_questions: [{ user_id: "b", question_id: 2 }],
+      glossary: [{ id: 1, en: "Tachycardia", ar: "سرعة ضربات القلب", course: "علامات حيوية" }, { id: 2, en: "Edema", ar: "وذمة (تورم)", course: "عام" }, { id: 3, en: "Anterior", ar: "أمامي", course: "تشريح" }],
+      checklists: [{ id: 1, title: "غسل الأيدي: 5 لحظات", course: "مكافحة العدوى", steps: "قبل لمس المريض\nقبل أي إجراء نظيف أو معقم\nبعد التعرض لسوائل الجسم\nبعد لمس المريض\nبعد لمس محيط المريض", created_at: iso(-3) }],
+      rotations: [{ id: 1, name: "باطنة", place: "مستشفى الجامعة", year: "", grp: "", start_date: iso(-2).slice(0, 10), end_date: iso(12).slice(0, 10), notes: "الحضور 8 صباحا" }],
+      cases: [{ id: 1, title: "مريض بيشكو من ضيق تنفس (حالة افتراضية)", course: "باطنة", scenario: "مريض عنده 60 سنة، شاكي من ضيق تنفس من يومين.", questions: "إيه أول حاجة تقيّمها؟", answer: "التنفس والعلامات الحيوية وبلّغ المسؤول.", created_at: iso(-1) }],
+      training_log: [{ id: 1, user_id: "b", day: iso(-1).slice(0, 10), hours: 6, dept: "باطنة", note: "" }],
       decks: [{ id: 1, title: "مصطلحات التشريح", course: "تشريح" }],
       cards: [{ id: 1, deck_id: 1, front: "Anterior", back: "أمامي" }, { id: 2, deck_id: 1, front: "Posterior", back: "خلفي" }, { id: 3, deck_id: 1, front: "Proximal", back: "قريب من الجذع" }],
       card_progress: [{ user_id: "b", card_id: 1, box: 3, due_at: iso(5) }],
@@ -163,7 +168,7 @@
       async setRole(id, role) { S.profiles.find((p) => p.id === id).role = role; save(); },
       async list(t, o = {}) {
         let a = [...(S[t] || [])];
-        if (["attempts", "topic_done", "wrong_questions", "card_progress", "mock_results"].includes(t) && me && me.role === "student") a = a.filter((x) => x.user_id === me.id);
+        if (["attempts", "topic_done", "wrong_questions", "card_progress", "mock_results", "training_log"].includes(t) && me && me.role === "student") a = a.filter((x) => x.user_id === me.id);
         if (o.eq) for (const k in o.eq) a = a.filter((x) => String(x[k]) === String(o.eq[k]));
         if (o.order) { const [k, asc] = o.order; a.sort((x, y) => (x[k] > y[k] ? 1 : x[k] < y[k] ? -1 : 0) * (asc === false ? -1 : 1)); }
         return a;
@@ -226,7 +231,7 @@
   const lsj = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } };
   const go = (t, p) => { tab = t; param = p == null ? null : p; render(); window.scrollTo(0, 0); };
   const NAVT = ["home", "tasks", "materials", "dash", "me"];
-  const TITLES = { decks: "كروت الحفظ", deck: "مراجعة", mock: "امتحان تجريبي", focus: "مؤقت التركيز", progress: "تقدمي", ann: "الإعلانات", mistakes: "بنك الأخطاء", schedule: "جدول المحاضرات", courses: "المقررات والامتحانات", course: "المقرر", quizzes: "الكويزات", quiz: "كويز", ai: "أدوات الذكاء الاصطناعي", team: "الفريق" };
+  const TITLES = { gloss: "قاموس المصطلحات", skills: "قوايم المهارات", rot: "جدول التدريب", tlog: "ساعات التدريب", prep: "جهّز للتدريب", cases: "حالات تعليمية", decks: "كروت الحفظ", deck: "مراجعة", mock: "امتحان تجريبي", focus: "مؤقت التركيز", progress: "تقدمي", ann: "الإعلانات", mistakes: "بنك الأخطاء", schedule: "جدول المحاضرات", courses: "المقررات والامتحانات", course: "المقرر", quizzes: "الكويزات", quiz: "كويز", ai: "أدوات الذكاء الاصطناعي", team: "الفريق" };
 
   async function render() {
     if (!me) return renderAuth("in");
@@ -234,7 +239,7 @@
     const tabs = [["home", I.home, "الرئيسية"], ["tasks", I.tasks, "المهام"], ["materials", I.book, "المواد"]];
     if (isStaff()) tabs.push(["dash", I.chart, "المتابعة"]);
     tabs.push(["me", I.user, "حسابي"]);
-    const known = ["decks", "deck", "mock", "focus", "progress", "mistakes", "ann", "home", "tasks", "materials", "dash", "me", "schedule", "courses", "course", "quizzes", "quiz", "ai", "team"];
+    const known = ["gloss", "skills", "rot", "tlog", "prep", "cases", "decks", "deck", "mock", "focus", "progress", "mistakes", "ann", "home", "tasks", "materials", "dash", "me", "schedule", "courses", "course", "quizzes", "quiz", "ai", "team"];
     if (!known.includes(tab) || (tab === "dash" && !isStaff()) || (tab === "team" && me.role !== "admin")) tab = "home";
     const sub = !NAVT.includes(tab);
     const head = tab === "home"
@@ -248,7 +253,7 @@
     $app.querySelectorAll("header [data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
     try {
       try { COURSES = await db.list("courses"); } catch (e) { COURSES = []; }
-      const v = { decks: viewDecks, deck: viewDeck, mock: viewMock, focus: viewFocus, progress: viewProgress, ann: viewAnn, home: viewHome, tasks: viewTasks, materials: viewMaterials, dash: viewDash, team: viewTeam, me: viewMe, schedule: viewSchedule, courses: viewCourses, course: viewCourse, quizzes: viewQuizzes, quiz: viewQuiz, mistakes: () => { param = "mistakes"; return viewQuiz(); }, ai: viewAI }[tab];
+      const v = { gloss: viewGlossary, skills: viewChecklists, rot: viewRotations, tlog: viewTlog, prep: viewPrep, cases: viewCases, decks: viewDecks, deck: viewDeck, mock: viewMock, focus: viewFocus, progress: viewProgress, ann: viewAnn, home: viewHome, tasks: viewTasks, materials: viewMaterials, dash: viewDash, team: viewTeam, me: viewMe, schedule: viewSchedule, courses: viewCourses, course: viewCourse, quizzes: viewQuizzes, quiz: viewQuiz, mistakes: () => { param = "mistakes"; return viewQuiz(); }, ai: viewAI }[tab];
       document.getElementById("main").innerHTML = await v();
       bind();
       if (tab === "materials") bindMaterials();
@@ -310,7 +315,7 @@
     const exams = courses.filter((c) => c.exam_at && new Date(c.exam_at) > now).sort((a, b) => new Date(a.exam_at) - new Date(b.exam_at));
     const ex = exams[0];
     const ini = (me.name || "?").trim().charAt(0);
-    const boxes = [["ann", ICONS.bell, "الإعلانات"], ["tasks", ICONS.tasks, "المهام"], ["materials", ICONS.book, "المواد"], ["schedule", ICONS.cal, "جدول المحاضرات"], ["courses", ICONS.exam, "الامتحانات والمقررات"], ["quizzes", ICONS.quiz, "الكويزات"], ["mistakes", ICONS.cap, "بنك الأخطاء"], ["decks", ICONS.cards, "كروت الحفظ"], ["mock", ICONS.exam, "امتحان تجريبي"], ["focus", ICONS.timer, "مؤقت التركيز"], ["progress", ICONS.chart, "تقدمي"], ["ai", ICONS.ai, "الذكاء الاصطناعي", "قريبًا"]];
+    const boxes = [["ann", ICONS.bell, "الإعلانات"], ["tasks", ICONS.tasks, "المهام"], ["materials", ICONS.book, "المواد"], ["schedule", ICONS.cal, "جدول المحاضرات"], ["courses", ICONS.exam, "الامتحانات والمقررات"], ["quizzes", ICONS.quiz, "الكويزات"], ["mistakes", ICONS.cap, "بنك الأخطاء"], ["decks", ICONS.cards, "كروت الحفظ"], ["mock", ICONS.exam, "امتحان تجريبي"], ["focus", ICONS.timer, "مؤقت التركيز"], ["progress", ICONS.chart, "تقدمي"], ["gloss", ICONS.book, "قاموس المصطلحات"], ["skills", ICONS.tasks, "قوايم المهارات"], ["rot", ICONS.cal, "جدول التدريب"], ["tlog", ICONS.timer, "ساعات التدريب"], ["prep", ICONS.cap, "جهّز للتدريب"], ["cases", ICONS.quiz, "حالات تعليمية"], ["ai", ICONS.ai, "الذكاء الاصطناعي", "قريبًا"]];
     if (isStaff()) boxes.push(["dash", ICONS.chart, "المتابعة"]);
     if (me.role === "admin") boxes.push(["team", ICONS.users, "الفريق"]);
     return `<div class="card prof"><div class="avatar">${esc(ini)}</div><div style="flex:1;min-width:0"><h3>${esc(me.name)}</h3>
@@ -484,6 +489,96 @@
       <div class="card"><b>محتاج مراجعة أكتر</b>${Object.keys(weak).sort((a, b) => weak[b] - weak[a]).map((c) => `<div class="row li"><span>${esc(c)}</span><span class="pill n">${weak[c]} غلطة</span></div>`).join("") || '<div class="mut">مفيش حاجة لسه</div>'}${wr.length ? `<button class="full sec" data-go2="mistakes">راجع أخطاءك</button>` : ""}</div>
       <div class="mut" style="margin:6px 2px">التقدم ده ليك إنت بس ومحدش من زمايلك بيشوفه.</div>`;
   }
+
+
+  // ---- أدوات تمريض (مرحلة 4) ----
+  const NOPHI = `<div class="mut" style="margin:6px 2px">⚠️ للتدريب فقط. ممنوع كتابة أي اسم مريض أو رقم ملف أو بيانات تعرّف أي حد. اتبع دايما تعليمات الكلية والمستشفى.</div>`;
+  async function viewGlossary() {
+    const list = await db.list("glossary", { order: ["en", true], limit: 2000 });
+    let h = `<input id="gq" placeholder="ابحث بالإنجليزي أو العربي..." style="margin-bottom:8px">`;
+    if (isStaff()) h += `<details class="card"><summary>+ إضافة مصطلحات</summary><form data-act="addGl"><input name="course" placeholder="المادة (اختياري)">
+      <textarea name="body" rows="6" placeholder="مصطلح في كل سطر: English | عربي&#10;Edema | وذمة"></textarea><button class="full">حفظ</button></form></details>`;
+    h += `<div id="gl">` + list.map((g) => `<div class="card row li" data-s="${esc((g.en + " " + g.ar).toLowerCase())}"><div><b dir="ltr">${esc(g.en)}</b><div>${esc(g.ar)}</div>${g.course ? `<div class="mut">${esc(g.course)}</div>` : ""}</div>${isStaff() ? `<button class="bad" data-act="delGl" data-id="${g.id}">حذف</button>` : ""}</div>`).join("") + `</div>`;
+    setTimeout(() => { const q = document.getElementById("gq"); if (q) q.oninput = () => { const v = q.value.trim().toLowerCase(); document.querySelectorAll("#gl [data-s]").forEach((e) => (e.style.display = e.dataset.s.includes(v) ? "" : "none")); }; }, 0);
+    return h + `<div class="mut" style="margin:6px 2px">المصطلحات من إعداد الفريق وبتتراجع مع الدكتور.</div>`;
+  }
+  act.addGl = (f) => run(async () => {
+    const d = new FormData(f);
+    const rows = String(d.get("body")).split("\n").map((l) => l.split("|").map((x) => x.trim())).filter((a) => a.length >= 2 && a[0] && a[1]);
+    if (!rows.length) throw new Error("اكتب: English | عربي في كل سطر");
+    await db.insert("glossary", rows.map((a) => ({ en: a[0], ar: a.slice(1).join(" | "), course: d.get("course").trim() || null, created_by: me.id })));
+  }, "اتحفظت");
+  act.delGl = (el, id) => confirm("تحذف المصطلح؟") && run(() => db.del("glossary", id));
+
+  const ckKey = (id) => "ck" + id;
+  async function viewChecklists() {
+    const list = await db.list("checklists", { order: ["created_at", true] });
+    let h = "";
+    if (isStaff()) h += `<details class="card"><summary>+ قائمة مهارة جديدة</summary><form data-act="addCk"><input name="title" placeholder="اسم المهارة" required><input name="course" placeholder="المادة (اختياري)">
+      <textarea name="steps" rows="8" placeholder="خطوة في كل سطر" required></textarea><button class="full">حفظ</button></form></details>`;
+    h += NOPHI;
+    return h + list.map((c) => {
+      const st = c.steps.split("\n").map((x) => x.trim()).filter(Boolean), on = lsj(ckKey(c.id), []);
+      return `<details class="card"><summary><b>${esc(c.title)}</b> <span class="mut">${on.length}/${st.length}</span></summary>
+        ${st.map((s2, i) => `<label class="row li" style="gap:8px"><input type="checkbox" style="width:auto" data-act="ckTog" data-id="${c.id}:${i}" ${on.includes(i) ? "checked" : ""}><span style="flex:1">${i + 1}. ${esc(s2)}</span></label>`).join("")}
+        <div class="row"><button class="full sec" data-act="ckReset" data-id="${c.id}">إعادة</button>${isStaff() ? `<button class="bad" data-act="delCk" data-id="${c.id}">حذف</button>` : ""}</div>
+        <div class="mut">تقدمك في القايمة محفوظ على موبايلك بس.</div></details>`;
+    }).join("") || `<div class="empty">مفيش قوايم لسه</div>`;
+  }
+  act.addCk = (f) => run(async () => { const d = new FormData(f); await db.insert("checklists", { title: d.get("title").trim(), course: d.get("course").trim() || null, steps: d.get("steps").trim(), created_by: me.id }); }, "اتحفظت");
+  act.delCk = (el, id) => confirm("تحذف القايمة؟") && run(() => db.del("checklists", id));
+  act.ckTog = (el, id) => { const [c, i] = id.split(":"), a = lsj(ckKey(c), []), n = Number(i), k = a.indexOf(n); if (k >= 0) a.splice(k, 1); else a.push(n); localStorage.setItem(ckKey(c), JSON.stringify(a)); const s2 = el.closest("details").querySelector("summary .mut"); if (s2) s2.textContent = a.length + "/" + el.closest("details").querySelectorAll("input[type=checkbox]").length; };
+  act.ckReset = (el, id) => { localStorage.removeItem(ckKey(id)); render(); };
+
+  async function viewRotations() {
+    const list = await db.list("rotations", { order: ["start_date", true] });
+    let h = "";
+    if (isStaff()) h += `<details class="card"><summary>+ تدريب / تبديل جديد</summary><form data-act="addRo"><input name="name" placeholder="القسم (مثلا: باطنة)" required><input name="place" placeholder="المستشفى / المكان">
+      <select name="year"><option value="">كل الفرق</option>${YEARS.map((y) => `<option>${y}</option>`).join("")}</select><input name="grp" placeholder="المجموعة (اختياري)">
+      <label>من</label><input name="s" type="date"><label>إلى</label><input name="e" type="date"><textarea name="notes" rows="2" placeholder="ملاحظات (مواعيد الحضور، اللبس...)"></textarea><button class="full">حفظ</button></form></details>`;
+    const mine = list.filter((r) => isStaff() || ((!r.year || !me.year || r.year === me.year) && (!r.grp || !me.grp || r.grp === me.grp)));
+    const today = todayKey();
+    return h + (mine.map((r) => { const st = r.end_date && r.end_date < today ? "خلص" : r.start_date && r.start_date > today ? "جاي" : "شغال";
+      return `<div class="card"><div class="row"><h3>${esc(r.name)}</h3><span class="pill ${st === "شغال" ? "y" : "n"}">${st}</span></div>
+      <div class="mut">${esc(r.place || "")}${r.year ? " · " + esc(r.year) : ""}${r.grp ? " · مجموعة " + esc(r.grp) : ""}</div>
+      <div class="info">${r.start_date ? fmtDate(r.start_date) : "?"} ← ${r.end_date ? fmtDate(r.end_date) : "?"}</div>${r.notes ? `<div class="mut">${esc(r.notes)}</div>` : ""}
+      ${isStaff() ? `<button class="bad" data-act="delRo" data-id="${r.id}">حذف</button>` : ""}</div>`; }).join("") || `<div class="empty">مفيش جدول تدريب لسه</div>`);
+  }
+  act.addRo = (f) => run(async () => { const d = new FormData(f); await db.insert("rotations", { name: d.get("name").trim(), place: d.get("place").trim() || null, year: d.get("year") || null, grp: d.get("grp").trim() || null, start_date: d.get("s") || null, end_date: d.get("e") || null, notes: d.get("notes").trim() || null, created_by: me.id }); }, "اتحفظ");
+  act.delRo = (el, id) => confirm("تحذف؟") && run(() => db.del("rotations", id));
+
+  async function viewTlog() {
+    const list = await db.list("training_log", { eq: { user_id: me.id }, order: ["day", false], limit: 500 });
+    const tot = list.reduce((a, x) => a + Number(x.hours), 0);
+    return `<div class="card" style="text-align:center"><div class="bigcd">${tot}</div><div class="mut">ساعة تدريب مسجلة (سجلك الخاص، محدش بيشوفه)</div></div>
+      <details class="card" open><summary>+ تسجيل ساعات</summary><form data-act="addTl"><label>اليوم</label><input name="day" type="date" value="${todayKey()}" required>
+      <input name="hours" type="number" step="0.5" min="0.5" max="24" placeholder="عدد الساعات" required><input name="dept" maxlength="60" placeholder="القسم (مثلا: باطنة)">
+      <input name="note" maxlength="80" placeholder="ملاحظة قصيرة (من غير أي بيانات مريض)"><button class="full">حفظ</button></form></details>${NOPHI}
+      ${list.map((x) => `<div class="card row li"><div><b>${x.hours} ساعة</b> · ${fmtDate(x.day)}<div class="mut">${esc(x.dept || "")} ${esc(x.note || "")}</div></div><button class="bad" data-act="delTl" data-id="${x.id}">حذف</button></div>`).join("")}`;
+  }
+  act.addTl = (f) => run(async () => { const d = new FormData(f); await db.insert("training_log", { user_id: me.id, day: d.get("day"), hours: Number(d.get("hours")), dept: d.get("dept").trim() || null, note: d.get("note").trim() || null }); }, "اتسجلت");
+  act.delTl = (el, id) => confirm("تحذف التسجيل؟") && run(() => db.del("training_log", id));
+
+  const PREP = ["يونيفورم نضيف ومكوي حسب لوائح الكلية", "بطاقة الكلية / الهوية معاك", "سماعة طبية", "ساعة بعقرب ثواني", "قلم أزرق وأسود وأحمر + نوتة صغيرة", "كمامة وجوانتي احتياطي", "شعر متلم، أظافر قصيرة من غير طلاء، من غير إكسسوارات", "تعرف قسمك ومكان الاجتماع وميعاد الحضور", "راجعت المهارات المطلوبة (قوايم المهارات في التطبيق)", "تطعيماتك والمطلوب من الكلية جاهز", "مياه وأكل خفيف", "فلوس مواصلات وشاحن موبايل"];
+  async function viewPrep() {
+    const on = lsj("prep", []);
+    return `<div class="card"><div class="row"><b>جهّز نفسك للتدريب</b><span class="mut">${on.length}/${PREP.length}</span></div>${PREP.map((p, i) => `<label class="row li" style="gap:8px"><input type="checkbox" style="width:auto" data-act="prepTog" data-id="${i}" ${on.includes(i) ? "checked" : ""}><span style="flex:1">${esc(p)}</span></label>`).join("")}
+      <div class="mut">قايمة عامة. راجع متطلبات كليتك بالظبط. التحديد محفوظ على موبايلك.</div></div>`;
+  }
+  act.prepTog = (el, id) => { const a = lsj("prep", []), n = Number(id), k = a.indexOf(n); if (k >= 0) a.splice(k, 1); else a.push(n); localStorage.setItem("prep", JSON.stringify(a)); };
+
+  async function viewCases() {
+    const list = await db.list("cases", { order: ["created_at", false], limit: 200 });
+    let h = "";
+    if (isStaff()) h += `<details class="card"><summary>+ حالة تعليمية</summary><form data-act="addCase"><input name="title" placeholder="عنوان الحالة" required><input name="course" placeholder="المادة">
+      <textarea name="scenario" rows="5" placeholder="وصف الحالة (حالة افتراضية بدون أي بيانات حقيقية)" required></textarea><textarea name="questions" rows="3" placeholder="الأسئلة (سطر لكل سؤال)"></textarea><textarea name="answer" rows="4" placeholder="الإجابة النموذجية (بتظهر بعد ما الطالب يفكر)"></textarea><button class="full">حفظ</button></form></details>`;
+    h += `<div class="mut" style="margin:6px 2px">حالات افتراضية للتعلم. مش بيانات مرضى حقيقية.</div>`;
+    return h + (list.filter((c) => vis(c.course)).map((c) => `<details class="card"><summary><b>${esc(c.title)}</b> <span class="mut">${esc(c.course || "")}</span></summary>
+      <div class="info" style="white-space:pre-wrap">${esc(c.scenario)}</div>${c.questions ? `<div style="white-space:pre-wrap"><b>أسئلة:</b>\n${esc(c.questions)}</div>` : ""}
+      ${c.answer ? `<details><summary>شوف الإجابة</summary><div class="info" style="white-space:pre-wrap">${esc(c.answer)}</div></details>` : ""}${isStaff() ? `<button class="bad" data-act="delCase" data-id="${c.id}">حذف</button>` : ""}</details>`).join("") || `<div class="empty">مفيش حالات لسه</div>`);
+  }
+  act.addCase = (f) => run(async () => { const d = new FormData(f); await db.insert("cases", { title: d.get("title").trim(), course: d.get("course").trim() || null, scenario: d.get("scenario").trim(), questions: d.get("questions").trim() || null, answer: d.get("answer").trim() || null, created_by: me.id }); }, "اتحفظت");
+  act.delCase = (el, id) => confirm("تحذف الحالة؟") && run(() => db.del("cases", id));
 
   async function viewAI() {
     return `<div class="card" style="text-align:center"><div class="bigic">${ICONS.ai}</div><h3>قريبًا</h3>
