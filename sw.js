@@ -1,4 +1,4 @@
-const V="hub-v7";
+const V="hub-v8";
 const SHELL=["./","index.html","app.js","style.css","config.js","supabase.js","manifest.webmanifest","logo.js"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(SHELL)));self.skipWaiting()});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==V).map(x=>caches.delete(x)))));self.clients.claim()});
