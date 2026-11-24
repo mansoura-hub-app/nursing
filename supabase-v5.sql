@@ -71,3 +71,6 @@ insert into public.glossary (en, ar, course) values
 insert into public.checklists (title, course, steps) values
 ('غسل الأيدي: 5 لحظات (منظمة الصحة العالمية)', 'مكافحة العدوى', E'قبل لمس المريض\nقبل أي إجراء نظيف أو معقم\nبعد التعرض لسوائل الجسم\nبعد لمس المريض\nبعد لمس محيط المريض'),
 ('قياس العلامات الحيوية (تدريب)', 'تمريض أساسي', E'اغسل إيدك وجهّز الأدوات\nعرّف بنفسك واشرح للمريض\nخلّي المريض مرتاح وهادي\nقيس النبض (عدّ لدقيقة كاملة)\nقيس التنفس من غير ما يحس\nقيس الحرارة\nقيس الضغط بالحجم المناسب للكُف\nسجّل القراءات بوقتها\nبلّغ المسؤول عن أي قراءة غير طبيعية\nاغسل إيدك');
+
+grant select, insert, update, delete on public.glossary, public.checklists, public.rotations, public.cases, public.training_log to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
